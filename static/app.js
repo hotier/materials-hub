@@ -263,7 +263,7 @@ function renderTree() {
   if (!treeData) return;
 
   const buildNode = (node, depth = 0) => {
-    const children = Object.values(node.children);
+    const children = Object.values(node.children).sort((a, b) => b.path.localeCompare(a.path));
     const hasChildren = children.length > 0;
 
     let html = '';
