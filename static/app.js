@@ -186,9 +186,8 @@ async function loadMaterials() {
 function applyMaterials(materials) {
   allMaterials = materials;
   materialCount.textContent = allMaterials.length;
-  buildTree();
-  renderList();
 
+  // 立即显示内容区，DOM 构建放后面异步执行
   loading.style.display = 'none';
   if (allMaterials.length === 0) {
     emptyState.style.display = 'flex';
@@ -196,8 +195,14 @@ function applyMaterials(materials) {
   } else {
     emptyState.style.display = 'none';
     workspace.style.display = 'flex';
-    navigateToToday();
   }
+
+  // 异步构建树和列表，不阻塞 spinner 的消失
+  requestAnimationFrame(() => {
+    buildTree();
+    renderList();
+    if (allMaterials.length > 0) navigateToToday();
+  });
 }
 
 // ---- Tree ----
