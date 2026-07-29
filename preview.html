@@ -45,6 +45,7 @@
   <div id="ffViewer" style="flex:1; width:100%; min-height:0; border:none; display:none;"></div>
 
   <script src="/file-viewer/flyfish-file-viewer-web-full.iife.js"></script>
+  <script src="/static/storage.js"></script>
   <script>
     (async function () {
       const $ = (s) => document.querySelector(s);
@@ -72,46 +73,28 @@
 
       // Flyfish 在拿到文件信息后再用命令式 mountViewer 挂载（见下方 try 内）
 
-      try {
-        const res = await fetch(`${API_BASE}/preview?id=${encodeURIComponent(id)}&info=1`);
-        if (res.status === 404) {
-          showError('产出不存在或已被删除');
-          return;
-        }
-        if (!res.ok) throw new Error('获取产出信息失败');
-        const item = await res.json();
-
+      function render(item) {
         const ext = (item.ext || '').toLowerCase();
         const name = item.name || item.id;
 
-        // 补上真实扩展名，确保 Flyfish 能从文件名识别类型（item.name 可能不含后缀）
         const viewerName = ext && !name.toLowerCase().endsWith('.' + ext)
-          ? name + '.' + ext
-          : name;
+          ? name + '.' + ext : name;
 
         titleEl.textContent = name;
         document.title = viewerName;
-        if (ext) {
-          extBadge.textContent = ext.toUpperCase();
-          extBadge.style.display = '';
-        }
+        if (ext) { extBadge.textContent = ext.toUpperCase(); extBadge.style.display = ''; }
 
         btnDownload.href = `${API_BASE}/preview?id=${encodeURIComponent(id)}&download=1`;
         btnDownload.download = name;
 
-        // 统一交给 Flyfish File Viewer 渲染（支持约 200+ 种格式）
-        // 用命令式 mountViewer：Web Component 为属性驱动，且返回的句柄通过 .subscribe 暴露状态
         ffViewer.style.display = 'block';
         if (!window.FlyfishFileViewerWebFull || !window.FlyfishFileViewerWebFull.mountViewer) {
-          showError('预览组件加载失败');
-          return;
+          showError('预览组件加载失败'); return;
         }
         if (window.__ffHandle) { try { window.__ffHandle.destroy(); } catch (e) {} }
         window.__ffHandle = window.FlyfishFileViewerWebFull.mountViewer(ffViewer, {
           url: `${API_BASE}/raw?key=${encodeURIComponent(item.R2Key || '')}`,
-          name: viewerName,
-          theme: 'light',
-          locale: 'zh-CN',
+          name: viewerName, theme: 'light', locale: 'zh-CN',
           toolbar: { position: 'bottom-right' },
         });
         const applyState = (state) => {
@@ -126,8 +109,26 @@
             if (st && (st.error || st.ready)) { clearInterval(t); applyState(st); }
           }, 300);
         }
+      }
+
+      // 1. 缓存命中 → 立即渲染
+      const cached = getCachedItem(id);
+      if (cached) { render(cached); loadingEl.style.display = 'none'; }
+
+      // 2. 异步拉取最新数据
+      try {
+        const res = await fetch(`${API_BASE}/preview?id=${encodeURIComponent(id)}&info=1`);
+        if (res.status === 404) {
+          if (!cached) showError('产出不存在或已被删除');
+          return;
+        }
+        if (!res.ok) throw new Error('获取产出信息失败');
+        const fresh = await res.json();
+        cacheItem(id, fresh);
+        // 数据变了或没缓存 → 重新渲染
+        if (!cached || cached.R2Key !== fresh.R2Key) render(fresh);
       } catch (err) {
-        showError(err.message || '加载失败');
+        if (!cached) showError(err.message || '加载失败');
       }
     })();
   </script>

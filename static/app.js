@@ -145,10 +145,20 @@ async function checkAuth() {
 
 // ---- Load Materials ----
 async function loadMaterials() {
-  loading.style.display = 'flex';
-  emptyState.style.display = 'none';
-  workspace.style.display = 'none';
+  const cached = getCachedList();
 
+  // 1. 有缓存：立即用缓存渲染，loading 不显示
+  if (cached.data) {
+    applyMaterials(cached.data);
+    // 缓存新鲜则跳过网络请求
+    if (cached.fresh) return;
+  } else {
+    loading.style.display = 'flex';
+    emptyState.style.display = 'none';
+    workspace.style.display = 'none';
+  }
+
+  // 2. 异步拉取最新数据
   try {
     const resp = await fetch(`${API_BASE}/list`);
     if (resp.status === 401) {
@@ -159,26 +169,34 @@ async function loadMaterials() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
     const data = await resp.json();
-    allMaterials = Array.isArray(data) ? data : (data.materials || []);
-
-    materialCount.textContent = allMaterials.length;
-    buildTree();
-    renderList();
-
-    loading.style.display = 'none';
-    if (allMaterials.length === 0) {
-      emptyState.style.display = 'flex';
-      workspace.style.display = 'none';
-    } else {
-      emptyState.style.display = 'none';
-      workspace.style.display = 'flex';
-      // 自动定位到今天的日期文件夹
-      navigateToToday();
-    }
+    const materials = Array.isArray(data) ? data : (data.materials || []);
+    setCachedList(materials);
+    applyMaterials(materials);
   } catch (err) {
     console.error('加载产出列表失败:', err);
     loading.style.display = 'none';
-    showToast('加载失败，请刷新重试', 'error');
+    // 有缓存时网络失败不弹 toast，静默使用旧数据
+    if (!cached.data) {
+      showToast('加载失败，请刷新重试', 'error');
+    }
+  }
+}
+
+/** 将材料数据应用到 UI */
+function applyMaterials(materials) {
+  allMaterials = materials;
+  materialCount.textContent = allMaterials.length;
+  buildTree();
+  renderList();
+
+  loading.style.display = 'none';
+  if (allMaterials.length === 0) {
+    emptyState.style.display = 'flex';
+    workspace.style.display = 'none';
+  } else {
+    emptyState.style.display = 'none';
+    workspace.style.display = 'flex';
+    navigateToToday();
   }
 }
 
@@ -748,6 +766,7 @@ async function handleDelete() {
 
     // Remove from local state
     allMaterials = allMaterials.filter(m => m.id !== deleteTargetId);
+    setCachedList(allMaterials);
     materialCount.textContent = allMaterials.length;
 
     if (selectedItem && selectedItem.id === deleteTargetId) {
@@ -823,6 +842,7 @@ async function executeEdit() {
     const idx = allMaterials.findIndex(m => m.id === editTargetItem.id);
     if (idx !== -1 && r.item) allMaterials[idx] = r.item;
     if (selectedItem && selectedItem.id === editTargetItem.id) selectedItem = allMaterials[idx];
+    setCachedList(allMaterials);
     renderList();
   } catch (e) {
     showToast(e.message || '保存失败', 'error');
@@ -1089,13 +1109,17 @@ function formatTimePath(path) {
         }
 
         const result = await resp.json();
-        if (result.item?.id) uploadedItemId = result.item.id;
+        if (result.item) {
+          uploadedItemId = result.item.id;
+          cacheItem(result.item.id, result.item);
+        }
 
         const pct = Math.round(((i + 1) / selectedFiles.length) * 100);
         progressFill.style.width = pct + '%';
         progressText.textContent = `上传中... ${pct}%`;
       }
 
+      invalidateListCache(); // 列表已变化，下次访问首页重新拉取
       uploadProgress.style.display = 'none';
       uploadSuccess.style.display = '';
       successMsg.textContent = `成功上传 ${selectedFiles.length} 个文件`;
