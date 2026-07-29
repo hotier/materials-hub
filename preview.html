@@ -24,8 +24,8 @@
     </div>
   </header>
 
-  <!-- 加载中 -->
-  <div class="preview-loading" id="previewLoading">
+  <!-- 加载中（默认隐藏，无缓存时才显示） -->
+  <div class="preview-loading" id="previewLoading" style="display:none;">
     <div class="spinner"></div>
     <p>加载预览中...</p>
   </div>
@@ -114,6 +114,7 @@
       // 1. 缓存命中 → 立即渲染
       const cached = getCachedItem(id);
       if (cached) { render(cached); loadingEl.style.display = 'none'; }
+      else { loadingEl.style.display = 'flex'; }
 
       // 2. 异步拉取最新数据
       try {
