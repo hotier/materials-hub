@@ -126,14 +126,14 @@ jobs:
         run: |
           set +e
           NAME="material-hub"
-          EXISTS=$(${{ env.WRANGLER }} pages project list --json 2>/dev/null \
-            | jq -r --arg n "$NAME" '.[]? | select(.name==$n) | .name' | head -n1)
-          if [ -n "$EXISTS" ]; then
-            echo "Pages project '$NAME' already exists."
-          else
-            echo "Creating Pages project '$NAME'..."
-            ${{ env.WRANGLER }} pages project create "$NAME" --production-branch main
-          fi
+          echo "Ensuring Pages project '$NAME'..."
+          OUT=$(${{ env.WRANGLER }} pages project create "$NAME" --production-branch main 2>&1) || {
+            if echo "$OUT" | grep -qi "already exists"; then
+              echo "Pages project '$NAME' already exists; continuing."
+            else
+              echo "$OUT"; exit 1
+            fi
+          }
 
       # ---------- 设置 Pages 密钥（从 GitHub Secrets 注入，限定 production 环境） ----------
       # 注意：代码实际读取的是 LOGIN_TOKEN 与 SYNC_TOKEN
