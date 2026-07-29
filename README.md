@@ -48,7 +48,6 @@ material-hub/
 │       ├── auth-status.ts      # GET    /api/auth-status（是否启用认证）
 │       └── sync.ts             # POST   /api/sync（Bearer Token 同步接口）
 ├── file-viewer/                # Flyfish 文件查看器（vendor 资源，随仓库发布）
-├── public/                     # 构建/打包产物（含 file-viewer 静态资源）
 └── .github/workflows/deploy.yml # GitHub Actions 自动部署
 ```
 
