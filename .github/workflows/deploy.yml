@@ -80,17 +80,22 @@ jobs:
           TITLE="material-hub"
           # wrangler 会在 stdout 打印废弃警告，提取首个 JSON 字符（[ 或 {）起的内容
           extract_json() { printf '%s\n' "$1" | sed -n '/^[\[{]/,$p'; }
-          RAW=$(${{ env.WRANGLER }} kv namespace list --json 2>/dev/null)
+          RAW=$(${{ env.WRANGLER }} kv namespace list --json 2>&1)
           LIST=$(extract_json "$RAW")
-          EXISTING=$(echo "$LIST" | jq -r --arg t "$TITLE" '.[]? | select(.title==$t) | .id' | head -n1)
+          EXISTING=$(echo "$LIST" | jq -r --arg t "$TITLE" '.[]? | select(.title==$t) | .id' 2>/dev/null | head -n1)
           if [ -n "$EXISTING" ]; then
             echo "KV namespace '$TITLE' already exists: $EXISTING"
             KV_ID="$EXISTING"
           else
             echo "Creating KV namespace '$TITLE'..."
-            RAW=$(${{ env.WRANGLER }} kv namespace create "$TITLE" --json 2>/dev/null)
-            CREATED=$(extract_json "$RAW")
-            KV_ID=$(echo "$CREATED" | jq -r '.id')
+            OUT=$(${{ env.WRANGLER }} kv namespace create "$TITLE" --json 2>&1)
+            CREATED=$(extract_json "$OUT")
+            KV_ID=$(echo "$CREATED" | jq -r '.id' 2>/dev/null)
+            if [ -z "$KV_ID" ]; then
+              echo "::error::Failed to create KV namespace or parse its id. wrangler output:"
+              echo "$OUT"
+              exit 1
+            fi
           fi
           echo "kv_id=$KV_ID" >> "$GITHUB_OUTPUT"
 
