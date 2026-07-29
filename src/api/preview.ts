@@ -14,7 +14,7 @@ previewRoute.get('/', async (c) => {
   if (!id) return jsonError(c, 400, '缺少参数 id');
 
   // 从 KV 查找产出
-  const list = await getMaterialList(c.env.MATERIALS_KV);
+  const list = await getMaterialList(c.env.KV);
   const item = list.find((m: { id: string }) => m.id === id);
 
   if (!item) {
@@ -22,15 +22,15 @@ previewRoute.get('/', async (c) => {
   }
 
   // 从 R2 读取
-  const r2Object = await c.env.MATERIALS_BUCKET.get(item.r2Key);
-  if (!r2Object) {
+  const R2Object = await c.env.R2.get(item.R2Key);
+  if (!R2Object) {
     return c.html('<h2 style="padding:40px;text-align:center;color:#999">产出文件不存在</h2>', 404);
   }
 
   // 根据扩展名取 MIME 兜底 R2 对象的 Content-Type
-  const ext = (item.ext as string) || getExt(item.r2Key as string);
+  const ext = (item.ext as string) || getExt(item.R2Key as string);
   const mime = getMime(ext);
-  let contentType = r2Object.httpMetadata?.contentType || mime;
+  let contentType = R2Object.httpMetadata?.contentType || mime;
 
   // 文本类文件补充 charset=utf-8，避免新窗口/下载乱码
   if (
@@ -45,7 +45,7 @@ previewRoute.get('/', async (c) => {
   }
 
   // 二进制内容走 c.body，文本内容也可直接返回
-  const body = await r2Object.arrayBuffer();
+  const body = await R2Object.arrayBuffer();
 
   return new Response(body, {
     headers: {

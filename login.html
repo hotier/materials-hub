@@ -18,6 +18,12 @@
     <p class="login-subtitle">请输入访问密码</p>
     <div class="login-field">
       <input type="password" id="loginPassword" class="login-input" placeholder="输入密码" autocomplete="current-password">
+      <button type="button" class="pwd-toggle" id="loginPwdToggle" title="显示密码">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
     </div>
     <div class="login-error" id="loginError" style="display:none;"></div>
     <button class="login-btn" id="loginSubmit">登 录</button>
@@ -48,26 +54,37 @@
 
     var params = new URLSearchParams(location.search);
     var redirect = params.get('redirect') || '/';
+    var isLogout = params.get('logout') === '1';
 
-    // 已有有效 session cookie → 直接跳转
-    (async function tryAutoLogin() {
-      try {
-        var resp = await fetch('/api/auth-status');
-        var data = await resp.json();
-        if (!data.requireAuth) {
-          location.replace(redirect);
-          return;
-        }
-        // 检查 cookie 是否有效
-        var sessionResp = await fetch('/api/session');
-        if (sessionResp.ok) {
-          location.replace(redirect);
-          return;
-        }
-      } catch (e) { /* 继续显示登录表单 */ }
-    })();
+    // 退出登录后直接显示表单，不做自动登录检测
+    if (!isLogout) {
+      (async function tryAutoLogin() {
+        try {
+          var resp = await fetch('/api/auth-status');
+          var data = await resp.json();
+          if (!data.requireAuth) {
+            location.replace(redirect);
+            return;
+          }
+          var sessionResp = await fetch('/api/session');
+          if (sessionResp.ok) {
+            location.replace(redirect);
+            return;
+          }
+        } catch (e) { /* 继续显示登录表单 */ }
+      })();
+    }
 
-    // 登录表单
+    // 显示/隐藏密码
+    var pwdToggle = $('#loginPwdToggle');
+    pwdToggle.addEventListener('click', function () {
+      var isPass = loginInput.type === 'password';
+      loginInput.type = isPass ? 'text' : 'password';
+      pwdToggle.innerHTML = isPass
+        ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+        : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+      loginInput.focus();
+    });
     var loginInput = $('#loginPassword');
     var loginBtn = $('#loginSubmit');
     var loginErr = $('#loginError');

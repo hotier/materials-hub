@@ -9,7 +9,13 @@ const logoutRoute = new Hono<{ Bindings: Env }>();
  * 清除 session cookie
  */
 logoutRoute.post('/', (c) => {
-  deleteCookie(c, 'session', { path: '/' });
+  const isSecure = c.req.url.startsWith('https://');
+  deleteCookie(c, 'session', {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: 'Lax',
+    path: '/',
+  });
   return c.json({ success: true });
 });
 

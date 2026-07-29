@@ -1,0 +1,119 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]          # 推送 main 即自动部署到生产环境
+  workflow_dispatch:          # 也支持在 Actions 页面手动触发
+
+# 防止多次推送时并发部署互相覆盖（保留最新一次）
+concurrency:
+  group: cloudflare-pages-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read              # 只需要读取仓库内容
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 提前发现类型错误（含 r2/R2、kv/KV 等变量改名回归）
+      - name: Typecheck
+        run: npm run typecheck
+
+      # 校验 Cloudflare 凭据是否有效，避免后续步骤静默失败
+      - name: Verify Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: npx wrangler whoami
+
+      # ---------- R2 存储桶（幂等：已存在则跳过） ----------
+      - name: Ensure R2 bucket
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          if npx wrangler r2 bucket list --json 2>/dev/null \
+              | grep -qE '"name"[[:space:]]*:[[:space:]]*"material-hub"'; then
+            echo "R2 bucket 'material-hub' already exists."
+          else
+            echo "Creating R2 bucket 'material-hub'..."
+            npx wrangler r2 bucket create material-hub
+          fi
+
+      # ---------- KV 命名空间（幂等：已存在则复用其 ID） ----------
+      - name: Ensure KV namespace
+        id: kv
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          TITLE="material-hub"
+          EXISTING=$(npx wrangler kv namespace list --json 2>/dev/null \
+            | jq -r --arg t "$TITLE" '.[]? | select(.title==$t) | .id' | head -n1)
+          if [ -n "$EXISTING" ]; then
+            echo "KV namespace '$TITLE' already exists: $EXISTING"
+            KV_ID="$EXISTING"
+          else
+            echo "Creating KV namespace '$TITLE'..."
+            KV_ID=$(npx wrangler kv namespace create "$TITLE" --json 2>/dev/null | jq -r '.id')
+          fi
+          echo "kv_id=$KV_ID" >> "$GITHUB_OUTPUT"
+
+      # ---------- 将真实的 KV ID 注入 wrangler.toml ----------
+      # wrangler.toml 中占位符为 your-kv-namespace-id，
+      # 部署时替换为真实命名空间 ID，使 Pages 的 KV 绑定生效。
+      - name: Inject KV id into wrangler.toml
+        env:
+          KV_ID: ${{ steps.kv.outputs.kv_id }}
+        run: |
+          if [ -z "$KV_ID" ]; then
+            echo "::error::KV namespace id is empty"; exit 1
+          fi
+          sed -i "s/your-kv-namespace-id/$KV_ID/" wrangler.toml
+          if grep -q "your-kv-namespace-id" wrangler.toml; then
+            echo "::error::KV id was not substituted"; exit 1
+          fi
+          echo "Injected KV id: $KV_ID"
+
+      # ---------- 确保 Pages 项目存在（首次部署时创建） ----------
+      - name: Ensure Pages project exists
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: npx wrangler pages project create material-hub --production-branch main 2>&1 || true
+
+      # ---------- 设置 Pages 环境变量（密钥，从 GitHub Secrets 注入） ----------
+      # 注意：代码实际读取的是 LOGIN_TOKEN 与 SYNC_TOKEN
+      # （README 中的 UPLOAD_PASSWORD 已过时，此处按代码为准）。
+      - name: Set Pages secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          if [ -n "${{ secrets.CF_LOGIN_TOKEN }}" ]; then
+            echo -n "${{ secrets.CF_LOGIN_TOKEN }}" | npx wrangler pages secret put LOGIN_TOKEN
+          fi
+          if [ -n "${{ secrets.CF_SYNC_TOKEN }}" ]; then
+            echo -n "${{ secrets.CF_SYNC_TOKEN }}" | npx wrangler pages secret put SYNC_TOKEN
+          fi
+
+      # ---------- 部署到 Cloudflare Pages ----------
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: npx wrangler pages deploy . --project-name material-hub --yes

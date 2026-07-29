@@ -9,7 +9,7 @@ const listRoute = new Hono<{ Bindings: Env }>();
  * 返回完整产出清单 JSON
  */
 listRoute.get('/', async (c) => {
-  const list = await getMaterialList(c.env.MATERIALS_KV);
+  const list = await getMaterialList(c.env.KV);
   return c.json(list, 200, {
     'Cache-Control': 'public, max-age=30',
   });

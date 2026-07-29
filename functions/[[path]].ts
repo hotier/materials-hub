@@ -8,6 +8,7 @@ import { syncAuth } from '../src/middleware/sync-auth';
 import listRoute from '../src/api/list';
 import uploadRoute from '../src/api/upload';
 import previewRoute from '../src/api/preview';
+import rawRoute from '../src/api/raw';
 import itemRoute from '../src/api/item';
 import authStatusRoute from '../src/api/auth-status';
 import loginRoute from '../src/api/login';
@@ -28,6 +29,7 @@ const api = new Hono<{ Bindings: Env }>();
 // ===== 公开路由 =====
 api.route('/list', listRoute);
 api.route('/preview', previewRoute);
+api.route('/raw', rawRoute);
 api.route('/auth-status', authStatusRoute);
 api.route('/login', loginRoute);
 api.route('/logout', logoutRoute);
@@ -46,6 +48,19 @@ api.route('/sync', syncRoute);
 
 // ===== 挂载 API 到 /api =====
 app.route('/api', api);
+
+// ===== 清洁 URL /preview → preview.html（内联渲染页） =====
+app.get('/preview', async (c) => {
+  if (c.env.ASSETS) {
+    const url = new URL(c.req.url);
+    url.pathname = '/preview.html';
+    return c.env.ASSETS.fetch(url);
+  }
+  // 本地开发降级
+  const url = new URL(c.req.url);
+  url.pathname = '/preview.html';
+  return c.redirect(url.toString());
+});
 
 // ===== 静态文件服务（兜底，优先走 Pages ASSETS） =====
 app.use('*', serveStatic());

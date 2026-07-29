@@ -30,9 +30,10 @@ loginRoute.post('/', async (c) => {
 
   // 签发 session cookie（httpOnly，JS 不可读）
   const token = await createSessionToken(configPwd);
+  const isSecure = c.req.url.startsWith('https://');
   setCookie(c, 'session', token, {
     httpOnly: true,
-    secure: true,
+    secure: isSecure,
     sameSite: 'Lax',
     path: '/',
     maxAge: 7 * 24 * 60 * 60,

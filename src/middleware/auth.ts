@@ -27,9 +27,10 @@ export async function authGuard(c: Context<{ Bindings: Env }>, next: Next) {
 
   // 滑动续期：每次验证通过后刷新 cookie
   const newToken = await createSessionToken(configPwd);
+  const isSecure = c.req.url.startsWith('https://');
   setCookie(c, 'session', newToken, {
     httpOnly: true,
-    secure: true,
+    secure: isSecure,
     sameSite: 'Lax',
     path: '/',
     maxAge: 7 * 24 * 60 * 60,

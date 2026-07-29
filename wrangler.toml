@@ -4,12 +4,12 @@ pages_build_output_dir = "."
 
 # R2 存储桶绑定（替换为你的桶名）
 [[r2_buckets]]
-binding = "MATERIALS_BUCKET"
+binding = "R2"
 bucket_name = "material-hub"
 
 # KV 命名空间绑定（替换为你的 KV ID）
 [[kv_namespaces]]
-binding = "MATERIALS_KV"
+binding = "KV"
 id = "your-kv-namespace-id"
 
 # 上传文件大小限制（最大 10MB）

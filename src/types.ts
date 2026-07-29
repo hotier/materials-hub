@@ -10,7 +10,7 @@ export interface MaterialItem {
   name: string;
   desc?: string;
   tags: string[];
-  r2Key: string;
+  R2Key: string;
   ext: FileExt;
   createTime: string;
 }
@@ -49,8 +49,9 @@ export interface SyncBatchPayload {
 
 /** Cloudflare 环境绑定 */
 export interface Env {
-  MATERIALS_BUCKET: R2Bucket;
-  MATERIALS_KV: KVNamespace;
+  R2: R2Bucket;
+  KV: KVNamespace;
   LOGIN_TOKEN?: string;
   SYNC_TOKEN?: string;
+  ASSETS?: { fetch: typeof fetch };
 }

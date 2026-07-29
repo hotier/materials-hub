@@ -10,24 +10,10 @@
 <body class="preview-body">
   <header class="preview-header">
     <div class="preview-header-left">
-      <a href="/" class="preview-back">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="19" y1="12" x2="5" y2="12"></line>
-          <polyline points="12 19 5 12 12 5"></polyline>
-        </svg>
-        返回首页
-      </a>
       <span class="preview-title" id="previewTitle">产出预览</span>
       <span class="preview-ext-badge" id="previewExtBadge"></span>
     </div>
     <div class="preview-header-right">
-      <button class="btn btn-sm btn-outline" id="btnNewWindow" title="新窗口打开">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-          <polyline points="15 3 21 3 21 9"></polyline>
-          <line x1="10" y1="14" x2="21" y2="3"></line>
-        </svg>
-      </button>
       <a class="btn btn-sm btn-outline" id="btnDownload" title="下载" download>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -53,27 +39,100 @@
     </svg>
     <h3>加载失败</h3>
     <p id="previewErrorMsg">无法加载该产出</p>
-    <a href="/" class="btn btn-outline">返回首页</a>
   </div>
 
-  <!-- HTML 预览 → iframe -->
-  <iframe id="htmlView" class="preview-frame" sandbox="allow-scripts allow-same-origin" style="display:none;"></iframe>
+  <!-- 统一预览：Flyfish File Viewer -->
+  <div id="ffViewer" style="flex:1; width:100%; min-height:0; border:none; display:none;"></div>
 
-  <!-- 图片预览 -->
-  <div id="imgView" class="preview-img-view" style="display:none;">
-    <img id="imgContent" alt="产出预览" />
-  </div>
+  <script src="/file-viewer/flyfish-file-viewer-web-full.iife.js"></script>
+  <script>
+    (async function () {
+      const $ = (s) => document.querySelector(s);
+      const API_BASE = '/api';
 
-  <!-- 代码/JSON 预览 -->
-  <div id="codeView" class="preview-code-view" style="display:none;">
-    <pre><code id="codeContent"></code></pre>
-  </div>
+      const id = new URL(location.href).searchParams.get('id');
+      const loadingEl = $('#previewLoading');
+      const errorEl = $('#previewError');
+      const errorMsg = $('#previewErrorMsg');
+      const titleEl = $('#previewTitle');
+      const extBadge = $('#previewExtBadge');
+      const btnDownload = $('#btnDownload');
+      const ffViewer = document.getElementById('ffViewer');
 
-  <!-- 纯文本预览 -->
-  <div id="textView" class="preview-text-view" style="display:none;">
-    <pre id="textContent"></pre>
-  </div>
+      function showError(msg) {
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'flex';
+        errorMsg.textContent = msg || '无法加载该产出';
+      }
 
-  <script src="/static/app.js"></script>
+      if (!id) {
+        showError('缺少产出 ID 参数');
+        return;
+      }
+
+      // Flyfish 在拿到文件信息后再用命令式 mountViewer 挂载（见下方 try 内）
+
+      try {
+        const res = await fetch(`${API_BASE}/list`);
+        if (!res.ok) throw new Error('获取产出列表失败');
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data.materials || []);
+        const item = list.find(m => m.id === id);
+
+        if (!item) {
+          showError('产出不存在或已被删除');
+          return;
+        }
+
+        const ext = (item.ext || '').toLowerCase();
+        const name = item.name || item.id;
+
+        // 补上真实扩展名，确保 Flyfish 能从文件名识别类型（item.name 可能不含后缀）
+        const viewerName = ext && !name.toLowerCase().endsWith('.' + ext)
+          ? name + '.' + ext
+          : name;
+
+        titleEl.textContent = name;
+        document.title = viewerName;
+        if (ext) {
+          extBadge.textContent = ext.toUpperCase();
+          extBadge.style.display = '';
+        }
+
+        btnDownload.href = `${API_BASE}/preview?id=${encodeURIComponent(id)}&download=1`;
+        btnDownload.download = name;
+
+        // 统一交给 Flyfish File Viewer 渲染（支持约 200+ 种格式）
+        // 用命令式 mountViewer：Web Component 为属性驱动，且返回的句柄通过 .subscribe 暴露状态
+        ffViewer.style.display = 'block';
+        if (!window.FlyfishFileViewerWebFull || !window.FlyfishFileViewerWebFull.mountViewer) {
+          showError('预览组件加载失败');
+          return;
+        }
+        if (window.__ffHandle) { try { window.__ffHandle.destroy(); } catch (e) {} }
+        window.__ffHandle = window.FlyfishFileViewerWebFull.mountViewer(ffViewer, {
+          url: `${API_BASE}/raw?key=${encodeURIComponent(item.R2Key || '')}`,
+          name: viewerName,
+          theme: 'light',
+          locale: 'zh-CN',
+          toolbar: { position: 'bottom-right' },
+        });
+        const applyState = (state) => {
+          if (state && state.error) showError('预览加载失败');
+          else if (state && state.ready) loadingEl.style.display = 'none';
+        };
+        if (typeof window.__ffHandle.subscribe === 'function') {
+          window.__ffHandle.subscribe(applyState);
+        } else {
+          const t = setInterval(() => {
+            const st = window.__ffHandle && window.__ffHandle.getState ? window.__ffHandle.getState() : null;
+            if (st && (st.error || st.ready)) { clearInterval(t); applyState(st); }
+          }, 300);
+        }
+      } catch (err) {
+        showError(err.message || '加载失败');
+      }
+    })();
+  </script>
 </body>
 </html>

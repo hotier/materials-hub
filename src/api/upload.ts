@@ -7,6 +7,16 @@ import {
 
 const uploadRoute = new Hono<{ Bindings: Env }>();
 
+// 将文件夹相对路径清洗为安全的 R2 目录片段（替换非法字符、去除 . 与 ..）
+function sanitizeRelPath(p: string): string {
+  return p
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((s) => s.replace(/[^a-zA-Z0-9._-]/g, '_'))
+    .filter((s) => s && s !== '.' && s !== '..')
+    .join('/');
+}
+
 /**
  * POST /api/upload
  * 接收任意支持格式的文件 → 上传至 R2 → 更新 KV 元数据
@@ -17,6 +27,7 @@ uploadRoute.post('/', async (c) => {
   const name = stripQuotes((formData.get('name') as string)?.slice(0, 60) || '');
   const desc = stripQuotes((formData.get('desc') as string)?.slice(0, 200) || '');
   const tagsStr = stripQuotes((formData.get('tags') as string) || '');
+  const relativePath = (formData.get('relativePath') as string) || '';
 
   // 参数校验
   if (!file || !name) {
@@ -37,14 +48,31 @@ uploadRoute.post('/', async (c) => {
     : [];
 
   // 生成唯一 ID 和安全的 R2 路径（按年月日归档）
-  const id = crypto.randomUUID();
+  // 生成包含数字+大小写字母的 32 位 ID
+  const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let id = '';
+  for (let i = 0; i < 32; i++) {
+    id += chars[bytes[i] % chars.length];
+  }
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
-  const r2Key = `output/${datePrefix}/${id}-${safeName}`;
+
+  // 若上传时携带相对路径（文件夹上传），则保留目录结构
+  let R2Key: string;
+  if (relativePath) {
+    const san = sanitizeRelPath(relativePath);
+    const lastSlash = san.lastIndexOf('/');
+    const dirPart = lastSlash >= 0 ? san.slice(0, lastSlash) : '';
+    const relName = dirPart ? `${dirPart}/${safeName}` : safeName;
+    R2Key = `output/${datePrefix}/${relName}`;
+  } else {
+    R2Key = `output/${datePrefix}/${id}-${safeName}`;
+  }
 
   // 上传 R2
   const buffer = await file.arrayBuffer();
-  await c.env.MATERIALS_BUCKET.put(r2Key, buffer, {
+  await c.env.R2.put(R2Key, buffer, {
     httpMetadata: { contentType: getMime(ext) },
   });
 
@@ -55,14 +83,14 @@ uploadRoute.post('/', async (c) => {
     desc,
     tags,
     ext,
-    r2Key,
+    R2Key,
     createTime: new Date().toISOString().slice(0, 10),
   };
 
   // 更新 KV
-  const list = await getMaterialList(c.env.MATERIALS_KV);
+  const list = await getMaterialList(c.env.KV);
   list.push(item);
-  await setMaterialList(c.env.MATERIALS_KV, list);
+  await setMaterialList(c.env.KV, list);
 
   return c.json({ success: true, item });
 });

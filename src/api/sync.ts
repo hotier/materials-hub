@@ -39,10 +39,10 @@ syncRoute.post('/', async (c) => {
   const id = crypto.randomUUID();
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
-  const r2Key = `output/${datePrefix}/${id}-${safeName}`;
+  const R2Key = `output/${datePrefix}/${id}-${safeName}`;
 
   const buffer = await file.arrayBuffer();
-  await c.env.MATERIALS_BUCKET.put(r2Key, buffer, {
+  await c.env.R2.put(R2Key, buffer, {
     httpMetadata: { contentType: getMime(ext) },
   });
 
@@ -52,13 +52,13 @@ syncRoute.post('/', async (c) => {
     desc,
     tags,
     ext,
-    r2Key,
+    R2Key,
     createTime: new Date().toISOString().slice(0, 10),
   };
 
-  const list = await getMaterialList(c.env.MATERIALS_KV);
+  const list = await getMaterialList(c.env.KV);
   list.push(item);
-  await setMaterialList(c.env.MATERIALS_KV, list);
+  await setMaterialList(c.env.KV, list);
 
   return c.json({ success: true, item });
 });
@@ -73,7 +73,7 @@ syncRoute.delete('/', async (c) => {
 
   if (!id) return jsonError(c, 400, '缺少参数 id');
 
-  const list = await getMaterialList(c.env.MATERIALS_KV);
+  const list = await getMaterialList(c.env.KV);
   const idx = list.findIndex((m: { id: string }) => m.id === id);
 
   if (idx === -1) {
@@ -84,13 +84,13 @@ syncRoute.delete('/', async (c) => {
 
   // 删除 R2 文件（失败不阻塞）
   try {
-    await c.env.MATERIALS_BUCKET.delete(item.r2Key);
+    await c.env.R2.delete(item.R2Key);
   } catch (err) {
     console.warn('R2 delete warning:', (err as Error).message);
   }
 
   list.splice(idx, 1);
-  await setMaterialList(c.env.MATERIALS_KV, list);
+  await setMaterialList(c.env.KV, list);
 
   return c.json({ success: true, id });
 });
