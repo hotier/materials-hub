@@ -62,14 +62,19 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         run: |
           TITLE="material-hub"
-          EXISTING=$(npx wrangler kv namespace list --json 2>/dev/null \
-            | jq -r --arg t "$TITLE" '.[]? | select(.title==$t) | .id' | head -n1)
+          # wrangler 会在 stdout 打印废弃警告，提取首个 JSON 字符（[ 或 {）起的内容
+          extract_json() { printf '%s\n' "$1" | sed -n '/^[\[{]/,$p'; }
+          RAW=$(npx wrangler kv namespace list --json 2>/dev/null)
+          LIST=$(extract_json "$RAW")
+          EXISTING=$(echo "$LIST" | jq -r --arg t "$TITLE" '.[]? | select(.title==$t) | .id' | head -n1)
           if [ -n "$EXISTING" ]; then
             echo "KV namespace '$TITLE' already exists: $EXISTING"
             KV_ID="$EXISTING"
           else
             echo "Creating KV namespace '$TITLE'..."
-            KV_ID=$(npx wrangler kv namespace create "$TITLE" --json 2>/dev/null | jq -r '.id')
+            RAW=$(npx wrangler kv namespace create "$TITLE" --json 2>/dev/null)
+            CREATED=$(extract_json "$RAW")
+            KV_ID=$(echo "$CREATED" | jq -r '.id')
           fi
           echo "kv_id=$KV_ID" >> "$GITHUB_OUTPUT"
 
