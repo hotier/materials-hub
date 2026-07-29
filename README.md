@@ -79,7 +79,7 @@ material-hub/
 
 | 头 | 必填 | 说明 |
 |---|---|---|
-| `Authorization: Bearer <SYNC_TOKEN>` | ✅ | Bearer Token 认证 |
+| `Authorization: Bearer <SYNC_TOKEN>` | ❌ | 仅当配置了 `SYNC_TOKEN` 时才需要 |
 | `Content-Type: multipart/form-data` | ✅ | curl 加 `-F` 自动设置 |
 
 **请求体（multipart/form-data）**
@@ -133,9 +133,8 @@ curl -X POST https://your-domain.pages.dev/api/sync \
   -F "desc=2026年7月首页改版" \
   -F "tags=env,ui"
 
-# 最小参数（仅 file）
+# 最小参数（仅 file，未配置 SYNC_TOKEN 时免认证）
 curl -X POST https://your-domain.pages.dev/api/sync \
-  -H "Authorization: Bearer your-sync-token" \
   -F "file=@screenshot.png"
 ```
 
@@ -145,7 +144,7 @@ curl -X POST https://your-domain.pages.dev/api/sync \
 
 | 头 | 必填 | 说明 |
 |---|---|---|
-| `Authorization: Bearer <SYNC_TOKEN>` | ✅ | Bearer Token 认证 |
+| `Authorization: Bearer <SYNC_TOKEN>` | ❌ | 仅当配置了 `SYNC_TOKEN` 时才需要 |
 
 **请求参数（Query String）**
 

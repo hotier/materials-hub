@@ -4,15 +4,14 @@ import { jsonError } from '../helpers';
 
 /**
  * 同步 API Token 校验中间件
- * 要求请求头 Authorization: Bearer <SYNC_TOKEN>
- * 若未配置 SYNC_TOKEN 则直接拒绝（同步端点必须有 Token）
+ * 若配置了 SYNC_TOKEN 则校验 Authorization: Bearer <SYNC_TOKEN>
+ * 未配置则免认证放行
  */
 export async function syncAuth(c: Context<{ Bindings: Env }>, next: Next) {
   const configToken = c.env.SYNC_TOKEN;
 
-  if (!configToken) {
-    return jsonError(c, 501, '同步功能未启用，请配置 SYNC_TOKEN 环境变量');
-  }
+  // 未设置 Token，免认证放行
+  if (!configToken) return next();
 
   const auth = c.req.header('Authorization') || '';
   const provided = auth.startsWith('Bearer ') ? auth.slice(7) : '';
