@@ -70,6 +70,8 @@ jobs:
           fi
 
       # ---------- KV 命名空间（幂等：已存在则复用其 ID） ----------
+      # wrangler v4 的 kv namespace 子命令不支持 --json，改用 Cloudflare REST API 直调，
+      # 输出为标准 JSON，jq 直接取 .result[].id，无需解析 wrangler 命令行输出。
       - name: Ensure KV namespace
         id: kv
         env:
@@ -78,24 +80,23 @@ jobs:
         run: |
           set +e
           TITLE="material-hub"
-          # wrangler 会在 stdout 打印废弃警告，提取首个 JSON 字符（[ 或 {）起的内容
-          extract_json() { printf '%s\n' "$1" | sed -n '/^[\[{]/,$p'; }
-          RAW=$(${{ env.WRANGLER }} kv namespace list --json 2>&1)
-          LIST=$(extract_json "$RAW")
-          EXISTING=$(echo "$LIST" | jq -r --arg t "$TITLE" '.[]? | select(.title==$t) | .id' 2>/dev/null | head -n1)
-          if [ -n "$EXISTING" ]; then
-            echo "KV namespace '$TITLE' already exists: $EXISTING"
-            KV_ID="$EXISTING"
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces"
+          # 查询已有命名空间
+          RESP=$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API")
+          KV_ID=$(echo "$RESP" | jq -r --arg t "$TITLE" '.result[]? | select(.title==$t) | .id' | head -n1)
+          if [ -n "$KV_ID" ]; then
+            echo "KV namespace '$TITLE' already exists: $KV_ID"
           else
             echo "Creating KV namespace '$TITLE'..."
-            # 注意：wrangler kv namespace create 不支持 --json，创建后重新列出以取 ID
-            ${{ env.WRANGLER }} kv namespace create "$TITLE" 2>&1
-            RAW=$(${{ env.WRANGLER }} kv namespace list --json 2>&1)
-            LIST=$(extract_json "$RAW")
-            KV_ID=$(echo "$LIST" | jq -r --arg t "$TITLE" '.[]? | select(.title==$t) | .id' 2>/dev/null | head -n1)
-            if [ -z "$KV_ID" ]; then
-              echo "::error::Failed to retrieve KV namespace id after create. wrangler output:"
-              echo "$RAW"
+            RESP=$(curl -sf -X POST \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"title\":\"$TITLE\"}" \
+              "$API")
+            KV_ID=$(echo "$RESP" | jq -r '.result.id')
+            if [ -z "$KV_ID" ] || [ "$KV_ID" = "null" ]; then
+              echo "::error::Failed to create KV namespace. API response:"
+              echo "$RESP"
               exit 1
             fi
           fi
