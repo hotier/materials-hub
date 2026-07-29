@@ -88,12 +88,14 @@ jobs:
             KV_ID="$EXISTING"
           else
             echo "Creating KV namespace '$TITLE'..."
-            OUT=$(${{ env.WRANGLER }} kv namespace create "$TITLE" --json 2>&1)
-            CREATED=$(extract_json "$OUT")
-            KV_ID=$(echo "$CREATED" | jq -r '.id' 2>/dev/null)
+            # 注意：wrangler kv namespace create 不支持 --json，创建后重新列出以取 ID
+            ${{ env.WRANGLER }} kv namespace create "$TITLE" 2>&1
+            RAW=$(${{ env.WRANGLER }} kv namespace list --json 2>&1)
+            LIST=$(extract_json "$RAW")
+            KV_ID=$(echo "$LIST" | jq -r --arg t "$TITLE" '.[]? | select(.title==$t) | .id' 2>/dev/null | head -n1)
             if [ -z "$KV_ID" ]; then
-              echo "::error::Failed to create KV namespace or parse its id. wrangler output:"
-              echo "$OUT"
+              echo "::error::Failed to retrieve KV namespace id after create. wrangler output:"
+              echo "$RAW"
               exit 1
             fi
           fi
