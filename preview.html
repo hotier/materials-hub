@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>预览产出 - 产出导航站</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="preview-body">
+  <header class="preview-header">
+    <div class="preview-header-left">
+      <a href="/" class="preview-back">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        返回首页
+      </a>
+      <span class="preview-title" id="previewTitle">产出预览</span>
+      <span class="preview-ext-badge" id="previewExtBadge"></span>
+    </div>
+    <div class="preview-header-right">
+      <button class="btn btn-sm btn-outline" id="btnNewWindow" title="新窗口打开">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
+        </svg>
+      </button>
+      <a class="btn btn-sm btn-outline" id="btnDownload" title="下载" download>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- 加载中 -->
+  <div class="preview-loading" id="previewLoading">
+    <div class="spinner"></div>
+    <p>加载预览中...</p>
+  </div>
+
+  <!-- 错误状态 -->
+  <div class="preview-error" id="previewError" style="display:none;">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <h3>加载失败</h3>
+    <p id="previewErrorMsg">无法加载该产出</p>
+    <a href="/" class="btn btn-outline">返回首页</a>
+  </div>
+
+  <!-- HTML 预览 → iframe -->
+  <iframe id="htmlView" class="preview-frame" sandbox="allow-scripts allow-same-origin" style="display:none;"></iframe>
+
+  <!-- 图片预览 -->
+  <div id="imgView" class="preview-img-view" style="display:none;">
+    <img id="imgContent" alt="产出预览" />
+  </div>
+
+  <!-- 代码/JSON 预览 -->
+  <div id="codeView" class="preview-code-view" style="display:none;">
+    <pre><code id="codeContent"></code></pre>
+  </div>
+
+  <!-- 纯文本预览 -->
+  <div id="textView" class="preview-text-view" style="display:none;">
+    <pre id="textContent"></pre>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
