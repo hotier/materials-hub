@@ -46,12 +46,22 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         run: |
-          if npx wrangler r2 bucket list --json 2>/dev/null \
-              | grep -qE '"name"[[:space:]]*:[[:space:]]*"material-hub"'; then
-            echo "R2 bucket 'material-hub' already exists."
+          BUCKET="material-hub"
+          # wrangler 会在 stdout 打印版本/废弃警告，提取首个 JSON 部分再判断
+          extract_json() { printf '%s\n' "$1" | sed -n '/^[\[{]/,$p'; }
+          RAW=$(npx wrangler r2 bucket list --json 2>/dev/null)
+          LIST=$(extract_json "$RAW")
+          if echo "$LIST" | jq -e --arg n "$BUCKET" '.[]? | select(.name==$n)' >/dev/null 2>&1; then
+            echo "R2 bucket '$BUCKET' already exists."
           else
-            echo "Creating R2 bucket 'material-hub'..."
-            npx wrangler r2 bucket create material-hub
+            echo "Creating R2 bucket '$BUCKET'..."
+            OUT=$(npx wrangler r2 bucket create "$BUCKET" 2>&1) || {
+              if echo "$OUT" | grep -qi "already exists"; then
+                echo "R2 bucket '$BUCKET' already exists; continuing."
+              else
+                echo "$OUT"; exit 1
+              fi
+            }
           fi
 
       # ---------- KV 命名空间（幂等：已存在则复用其 ID） ----------
