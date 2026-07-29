@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import type { Env, FileExt } from './types';
+import type { Env, FileExt, MaterialItem } from './types';
 
 const KV_KEY = 'materials:list';
 
