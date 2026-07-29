@@ -71,6 +71,101 @@ material-hub/
   - `/api/sync` 使用 `SYNC_TOKEN` 做 Bearer 认证，供自动化/WorkBuddy 同步使用。
   - 未配置任何密码则无需认证可直接访问与上传。
 
+## 命令行上传/删除 API
+
+### POST /api/sync（上传）
+
+**请求头**
+
+| 头 | 必填 | 说明 |
+|---|---|---|
+| `Authorization: Bearer <SYNC_TOKEN>` | ✅ | Bearer Token 认证 |
+| `Content-Type: multipart/form-data` | ✅ | curl 加 `-F` 自动设置 |
+
+**请求体（multipart/form-data）**
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `file` | ✅ | 上传的文件 |
+| `name` | ❌ | 产出名称，最大 60 字符；不填则取文件名 |
+| `desc` | ❌ | 描述，最大 200 字符 |
+| `tags` | ❌ | 标签，逗号分隔，如 `env,character` |
+
+**支持格式**：`html, htm, jpg, jpeg, png, gif, svg, webp, bmp, ico, json, txt, md, csv, xml, css, js, ts, yaml, yml, log, sql, pdf, doc, docx, docm, dotx, dotm, rtf, xls, xlsx, xlsm, xltx, xlsb, ppt, pptx, pptm, potx, ppsx, vsd, vsdx, pub, odt, ods, odp, odg`
+
+**限制**：单文件最大 10 MB
+
+**成功响应（200）**
+
+```json
+{
+  "success": true,
+  "item": {
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "首页设计稿",
+    "desc": "2026年7月首页改版",
+    "tags": ["env", "ui"],
+    "ext": "png",
+    "R2Key": "output/2026/07/30/a1b2c3d4-...-design.png",
+    "createTime": "2026-07-30"
+  },
+  "previewUrl": "https://your-domain.pages.dev/preview?id=a1b2c3d4-..."
+}
+```
+
+**错误响应**
+
+```json
+// 400 — 参数缺失或文件不合法
+{ "error": "缺少必要参数：file" }
+{ "error": "不支持的文件格式，允许：html, htm, ..." }
+{ "error": "文件大小不能超过 10MB" }
+```
+
+**curl 示例**
+
+```bash
+# 完整参数
+curl -X POST https://your-domain.pages.dev/api/sync \
+  -H "Authorization: Bearer your-sync-token" \
+  -F "file=@/path/to/screenshot.png" \
+  -F "name=首页设计稿" \
+  -F "desc=2026年7月首页改版" \
+  -F "tags=env,ui"
+
+# 最小参数（仅 file）
+curl -X POST https://your-domain.pages.dev/api/sync \
+  -H "Authorization: Bearer your-sync-token" \
+  -F "file=@screenshot.png"
+```
+
+### DELETE /api/sync（删除）
+
+**请求头**
+
+| 头 | 必填 | 说明 |
+|---|---|---|
+| `Authorization: Bearer <SYNC_TOKEN>` | ✅ | Bearer Token 认证 |
+
+**请求参数（Query String）**
+
+| 参数 | 必填 | 说明 |
+|---|---|---|
+| `id` | ✅ | 产出 ID，来自上传响应中的 `item.id` |
+
+**成功响应（200）**
+
+```json
+{ "success": true, "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890" }
+```
+
+**curl 示例**
+
+```bash
+curl -X DELETE "https://your-domain.pages.dev/api/sync?id=a1b2c3d4-..." \
+  -H "Authorization: Bearer your-sync-token"
+```
+
 ## 本地开发
 
 ```bash

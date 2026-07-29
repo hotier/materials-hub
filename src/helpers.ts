@@ -4,6 +4,16 @@ import type { Env, FileExt, MaterialItem } from './types';
 
 const KV_KEY = 'materials:list';
 
+/** 获取 Asia/Shanghai 时区的 YYYY-MM-DD 日期字符串 */
+export function getShanghaiDate(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 /** 支持的文件扩展名 */
 export const ALLOWED_EXTS: FileExt[] = [
   'html', 'htm', 'jpg', 'jpeg', 'png', 'gif', 'svg',

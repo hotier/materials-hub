@@ -3,25 +3,32 @@ import type { Env, MaterialItem } from '../types';
 import {
   getMaterialList, setMaterialList, jsonError,
   getExt, isAllowedExt, getMime, ALLOWED_EXTS, stripQuotes,
+  getShanghaiDate,
 } from '../helpers';
 
 const syncRoute = new Hono<{ Bindings: Env }>();
 
 /**
  * POST /api/sync
- * multipart/form-data: file + name + desc? + tags?
+ * multipart/form-data: file + name? + desc? + tags?
+ * name 不填则取文件名（不含扩展名）
  * Authorization: Bearer <SYNC_TOKEN>
  */
 syncRoute.post('/', async (c) => {
   const formData = await c.req.formData();
   const file = formData.get('file') as File | null;
-  const name = stripQuotes((formData.get('name') as string)?.slice(0, 60) || '');
+
+  if (!file) {
+    return jsonError(c, 400, '缺少必要参数：file');
+  }
+
+  // name 不填则取文件名（不含扩展名）
+  const rawName = (formData.get('name') as string)?.slice(0, 60) || '';
+  const name = rawName
+    ? stripQuotes(rawName)
+    : stripQuotes(file.name.replace(/\.[^.]*$/, ''));
   const desc = stripQuotes((formData.get('desc') as string)?.slice(0, 200) || '');
   const tagsStr = stripQuotes((formData.get('tags') as string) || '');
-
-  if (!file || !name) {
-    return jsonError(c, 400, '缺少必要参数：file 和 name');
-  }
 
   const ext = getExt(file.name);
   if (!ext || !isAllowedExt(ext)) {
@@ -38,7 +45,7 @@ syncRoute.post('/', async (c) => {
 
   const id = crypto.randomUUID();
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
+  const datePrefix = getShanghaiDate().replace(/-/g, '/');
   const R2Key = `output/${datePrefix}/${id}-${safeName}`;
 
   const buffer = await file.arrayBuffer();
@@ -53,14 +60,15 @@ syncRoute.post('/', async (c) => {
     tags,
     ext,
     R2Key,
-    createTime: new Date().toISOString().slice(0, 10),
+    createTime: getShanghaiDate(),
   };
 
   const list = await getMaterialList(c.env.KV);
   list.push(item);
   await setMaterialList(c.env.KV, list);
 
-  return c.json({ success: true, item });
+  const previewUrl = `${new URL(c.req.url).origin}/preview?id=${id}`;
+  return c.json({ success: true, item, previewUrl });
 });
 
 /**

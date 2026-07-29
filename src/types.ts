@@ -21,10 +21,11 @@ export interface ApiError {
   message?: string;
 }
 
-/** 上传成功响应 */
+/** 上传/同步成功响应 */
 export interface UploadResult {
   success: true;
   item: MaterialItem;
+  previewUrl: string;
 }
 
 /** 删除成功响应 */

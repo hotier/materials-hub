@@ -3,6 +3,7 @@ import type { Env, MaterialItem } from '../types';
 import {
   getMaterialList, setMaterialList, jsonError,
   getExt, isAllowedExt, getMime, ALLOWED_EXTS, stripQuotes,
+  getShanghaiDate,
 } from '../helpers';
 
 const uploadRoute = new Hono<{ Bindings: Env }>();
@@ -56,7 +57,7 @@ uploadRoute.post('/', async (c) => {
     id += chars[bytes[i] % chars.length];
   }
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
+  const datePrefix = getShanghaiDate().replace(/-/g, '/');
 
   // 若上传时携带相对路径（文件夹上传），则保留目录结构
   let R2Key: string;
@@ -84,7 +85,7 @@ uploadRoute.post('/', async (c) => {
     tags,
     ext,
     R2Key,
-    createTime: new Date().toISOString().slice(0, 10),
+    createTime: getShanghaiDate(),
   };
 
   // 更新 KV
@@ -92,7 +93,8 @@ uploadRoute.post('/', async (c) => {
   list.push(item);
   await setMaterialList(c.env.KV, list);
 
-  return c.json({ success: true, item });
+  const previewUrl = `${new URL(c.req.url).origin}/preview?id=${id}`;
+  return c.json({ success: true, item, previewUrl });
 });
 
 export default uploadRoute;

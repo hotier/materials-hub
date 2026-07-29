@@ -5,23 +5,25 @@ import { getMaterialList, jsonError, getMime, getExt } from '../helpers';
 const previewRoute = new Hono<{ Bindings: Env }>();
 
 /**
- * GET /api/preview?id=xxx
- * 代理读取 R2 中的文件，根据扩展名返回正确的 Content-Type
+ * GET /api/preview?id=xxx&info=1
+ * 仅返回产出元数据（供 preview.html 快速获取，不读 R2）
  */
 previewRoute.get('/', async (c) => {
   const id = c.req.query('id');
-
   if (!id) return jsonError(c, 400, '缺少参数 id');
 
-  // 从 KV 查找产出
   const list = await getMaterialList(c.env.KV);
   const item = list.find((m: { id: string }) => m.id === id);
-
   if (!item) {
     return c.html('<h2 style="padding:40px;text-align:center;color:#999">产出不存在</h2>', 404);
   }
 
-  // 从 R2 读取
+  // 元数据查询模式：直接返回 JSON，不读 R2
+  if (c.req.query('info') === '1') {
+    return c.json(item);
+  }
+
+  // 从 R2 读取文件
   const R2Object = await c.env.R2.get(item.R2Key);
   if (!R2Object) {
     return c.html('<h2 style="padding:40px;text-align:center;color:#999">产出文件不存在</h2>', 404);
