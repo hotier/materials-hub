@@ -75,7 +75,19 @@ api.route('/sync', syncRoute);
 app.route('/api', api);
 
 // ===== SPA 回退 → index.html =====
+// 仅对无文件扩展名的 SPA 路由做回退，静态资源（.js/.css/.png 等）直接返回原始文件
 app.get('*', async (c) => {
+  const { pathname } = new URL(c.req.url);
+
+  // 有扩展名 → 静态资源，使用原始路径获取
+  if (/\.[a-zA-Z0-9]{1,10}$/.test(pathname)) {
+    if (c.env.ASSETS) {
+      return c.env.ASSETS.fetch(new URL(c.req.url));
+    }
+    return c.notFound();
+  }
+
+  // SPA 路由 → 回退到 index.html
   if (c.env.ASSETS) {
     const url = new URL(c.req.url);
     url.pathname = '/index.html';
@@ -86,7 +98,7 @@ app.get('*', async (c) => {
   return c.redirect(url.toString());
 });
 
-// ===== 静态文件服务（兜底） =====
+// ===== 静态文件服务（兜底，处理非 GET 方法的静态资源） =====
 app.use('*', serveStatic());
 
 // ===== 全局错误处理 =====

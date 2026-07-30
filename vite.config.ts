@@ -45,7 +45,8 @@ export default defineConfig({
           if (id.includes('node_modules/@arco-design')) {
             return 'vendor-arco';
           }
-          if (id.includes('node_modules/vue')) {
+          // vue-router 依赖 vue，放入同一个 chunk 避免循环引用
+          if (id.includes('node_modules/vue') || id.includes('node_modules/vue-router')) {
             return 'vendor-vue';
           }
           if (id.includes('node_modules')) {
