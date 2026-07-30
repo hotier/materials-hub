@@ -42,13 +42,11 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // arco-design 组件库独立分包
           if (id.includes('node_modules/@arco-design')) {
             return 'vendor-arco';
           }
-          // vue-router 依赖 vue，放入同一个 chunk 避免循环引用
-          if (id.includes('node_modules/vue') || id.includes('node_modules/vue-router')) {
-            return 'vendor-vue';
-          }
+          // vue 和其他第三方包不拆分，避免循环引用导致运行时 TDZ 错误
           if (id.includes('node_modules')) {
             return 'vendor';
           }
