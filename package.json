@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5",
+    "@types/markdown-it": "^14.1.2",
     "@vitejs/plugin-vue": "^5.2.3",
     "concurrently": "^10.0.4",
     "typescript": "^5.8.3",

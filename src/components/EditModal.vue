@@ -50,7 +50,7 @@ watch(
 
 async function handleSave() {
   const valid = await formRef.value?.validate?.();
-  if (valid !== undefined && valid !== true) return;
+  if (valid !== undefined) return;
   saving.value = true;
   try {
     const res = await api.update(props.item!.id, {
@@ -61,7 +61,7 @@ async function handleSave() {
     if (res.success) {
       emit('saved');
     } else {
-      toast(res.message || '保存失败', 'error');
+      toast('保存失败', 'error');
     }
   } catch (err: any) {
     toast(err?.message || '保存失败', 'error');

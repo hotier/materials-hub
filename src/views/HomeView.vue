@@ -107,7 +107,7 @@ async function loadList() {
   try {
     const res = await api.list();
     if (res?.success !== false) {
-      items.value = (res.data || res.items || []) as Material[];
+      items.value = (res.data || []) as Material[];
       cateMap.value = res.cateMap || {};
       console.log('[HomeView] list loaded:', items.value.length, 'items');
     }

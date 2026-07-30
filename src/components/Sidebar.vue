@@ -99,8 +99,8 @@ watch(() => props.selectedKey, (val) => {
 });
 
 function handleSelect(
-  _selectedKeys: string[],
-  data: { selected?: boolean; node?: DateTreeNode },
+  _selectedKeys: (string | number)[],
+  data: { selected?: boolean; node?: any },
 ) {
   if (data.node?.key) {
     emit('select', data.node.key);

@@ -97,7 +97,7 @@ function formatSize(bytes: number): string {
           <span v-if="item" class="header-meta">{{ item.size ? formatSize(item.size) : '' }}</span>
         </div>
         <div v-if="showModeToggle" class="view-mode">
-          <a-switch v-model="viewMode" checked-value="preview" unchecked-value="source" type="text">
+          <a-switch v-model="viewMode" checked-value="preview" unchecked-value="source" :type="('text' as any)">
             <template #checked>预览</template>
             <template #unchecked>源码</template>
           </a-switch>
@@ -124,7 +124,7 @@ function formatSize(bytes: number): string {
         <!-- Markdown -->
         <MdPreview v-if="cat === 'md'" :url="fileUrl" :mode="viewMode" />
         <!-- Office -->
-        <DocxPreview v-else-if="cat === 'docx'" :url="fileUrl" />
+        <DocxPreview v-else-if="cat === 'docx'" :src="fileUrl" />
         <ExcelPreview v-else-if="cat === 'excel'" :url="fileUrl" />
         <PdfPreview v-else-if="cat === 'pdf'" :url="fileUrl" />
         <!-- 媒体 -->

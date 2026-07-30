@@ -29,7 +29,7 @@ async function handleLogin() {
   }
   loading.value = true
   try {
-    const res = await api.login(password.value)
+    const res = await api.login(password.value, rememberPwd.value)
     if (res.success) {
       if (rememberPwd.value) {
         localStorage.setItem('savedPassword', password.value)
@@ -40,7 +40,7 @@ async function handleLogin() {
       const redirect = (route.query.redirect as string) || '/'
       router.replace(redirect)
     } else {
-      toast(res.message || '密码错误', 'error')
+      toast('密码错误', 'error')
     }
   } catch (err: any) {
     toast(err?.message || '验证失败', 'error')

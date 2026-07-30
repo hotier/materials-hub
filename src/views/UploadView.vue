@@ -59,7 +59,7 @@ function customRequest(options: RequestOption) {
   const { fileItem, onError, onSuccess } = options;
   const formData = new FormData();
   formData.append('file', fileItem.file as File, fileItem.name);
-  const basename = fileItem.name.replace(/\.[^.]+$/, '');
+  const basename = (fileItem.name || '').replace(/\.[^.]+$/, '');
   formData.append('name', basename);
   formData.append('desc', '');
   formData.append('tags', '');
@@ -71,6 +71,9 @@ function customRequest(options: RequestOption) {
     .catch((err) => {
       onError(err);
     });
+  return {
+    abort() {},
+  };
 }
 
 async function handleUploadAll() {
@@ -203,7 +206,7 @@ function onDrop(e: DragEvent) {
               class="file-item"
               :class="`status-${item.status}`"
             >
-              <component :is="getFileIcon(item.name)" class="file-icon" :size="20" />
+              <component :is="getFileIcon(item.name || '')" class="file-icon" :size="20" />
               <span class="file-name">{{ item.name }}</span>
               <span class="file-size">{{ item.file ? formatSize(item.file.size) : '' }}</span>
               <a-tag
