@@ -32,8 +32,14 @@ jobs:
         run: npm ci
 
       # 提前发现类型错误（含 r2/R2、kv/KV 等变量改名回归）
-      - name: Typecheck
+      - name: Typecheck (Server)
         run: npm run typecheck
+
+      - name: Typecheck (Frontend)
+        run: npm run typecheck:fe
+
+      - name: Build
+        run: npm run build
 
       # 校验 Cloudflare 凭据是否有效，避免后续步骤静默失败
       - name: Verify Cloudflare credentials
@@ -157,4 +163,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-        run: ${{ env.WRANGLER }} pages deploy . --project-name material-hub
+        run: ${{ env.WRANGLER }} pages deploy --project-name material-hub

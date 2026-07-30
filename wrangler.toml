@@ -1,6 +1,6 @@
 name = "material-hub"
 compatibility_date = "2026-07-29"
-pages_build_output_dir = "."
+pages_build_output_dir = "dist"
 
 # R2 存储桶绑定（替换为你的桶名）
 [[r2_buckets]]
