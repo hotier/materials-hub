@@ -18,6 +18,8 @@ export interface Material {
   category?: string;
   R2Key: string;
   ext: string;
+  /** 文件夹相对路径（从 R2Key 解析，不含文件名），如 "项目A/图标" */
+  relativePath?: string;
 }
 
 /** 列表响应 */

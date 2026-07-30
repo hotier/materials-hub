@@ -4,7 +4,7 @@
 
 import type { Env, MaterialItem } from '../types';
 import type { FileExt } from '../lib/validation';
-import { ValidationError, NotFoundError, AppError } from '../lib/errors';
+import { ValidationError, NotFoundError } from '../lib/errors';
 import { validateFileExt, validateFileSize } from '../lib/validation';
 import {
   getItem,
@@ -51,10 +51,22 @@ export async function createMaterial(
     tags: metadata.tags,
     ext,
     R2Key,
+    size: file.size,
     createTime: getShanghaiDate(),
+    relativePath: metadata.relativePath || undefined,
   };
 
-  await addMaterial(env.KV, item);
+  try {
+    await addMaterial(env.KV, item);
+  } catch (err) {
+    // 元数据写入失败时，清理已上传的对象，避免留下无法在列表中管理的文件。
+    try {
+      await deleteFromR2(env.R2, R2Key);
+    } catch (cleanupErr) {
+      console.error('[material] 上传补偿清理失败:', R2Key, cleanupErr);
+    }
+    throw err;
+  }
 
   const previewUrl = buildPreviewUrl(origin, id);
   return { item, previewUrl };
@@ -86,10 +98,21 @@ export async function syncMaterial(
     tags: metadata.tags,
     ext,
     R2Key,
+    size: file.size,
     createTime: getShanghaiDate(),
   };
 
-  await addMaterial(env.KV, item);
+  try {
+    await addMaterial(env.KV, item);
+  } catch (err) {
+    // 同步上传同样需要补偿，防止 R2 与 KV 的状态分离。
+    try {
+      await deleteFromR2(env.R2, R2Key);
+    } catch (cleanupErr) {
+      console.error('[material] 同步上传补偿清理失败:', R2Key, cleanupErr);
+    }
+    throw err;
+  }
 
   const previewUrl = buildPreviewUrl(origin, id);
   return { item, previewUrl };
@@ -138,8 +161,23 @@ export async function deleteMaterial(env: Env, id: string): Promise<void> {
   const item = await getItem(env.KV, id);
   if (!item) throw new NotFoundError('产出');
 
+  // KV 删除若失败，需要能恢复刚删掉的对象，避免列表保留一条无法预览的记录。
+  const backup = await getFromR2(env.R2, item.R2Key);
+  const backupBody = backup ? await backup.arrayBuffer() : null;
+
   await deleteFromR2(env.R2, item.R2Key);
-  await removeMaterial(env.KV, id);
+  try {
+    await removeMaterial(env.KV, id);
+  } catch (err) {
+    if (backupBody) {
+      try {
+        await uploadToR2(env.R2, item.R2Key, backupBody, item.ext);
+      } catch (restoreErr) {
+        console.error('[material] 删除补偿恢复失败:', item.R2Key, restoreErr);
+      }
+    }
+    throw err;
+  }
 }
 
 // ===== File Access =====

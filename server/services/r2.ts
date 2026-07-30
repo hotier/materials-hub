@@ -64,11 +64,7 @@ export async function getFromR2(
   return R2.get(key);
 }
 
-/** 从 R2 删除文件（静默失败） */
+/** 从 R2 删除文件 */
 export async function deleteFromR2(R2: R2Bucket, key: string): Promise<void> {
-  try {
-    await R2.delete(key);
-  } catch (err) {
-    console.warn('[R2] 删除失败:', key, (err as Error).message);
-  }
+  await R2.delete(key);
 }

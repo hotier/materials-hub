@@ -74,18 +74,6 @@ api.route('/sync', syncRoute);
 // ===== 挂载 API 到 /api =====
 app.route('/api', api);
 
-// ===== 独立页面：/preview → preview.html =====
-app.get('/preview', async (c) => {
-  if (c.env.ASSETS) {
-    const url = new URL(c.req.url);
-    url.pathname = '/preview.html';
-    return c.env.ASSETS.fetch(url);
-  }
-  const url = new URL(c.req.url);
-  url.pathname = '/preview.html';
-  return c.redirect(url.toString());
-});
-
 // ===== SPA 回退 → index.html =====
 app.get('*', async (c) => {
   if (c.env.ASSETS) {

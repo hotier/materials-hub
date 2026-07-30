@@ -29,6 +29,7 @@ function getTodayKey() {
 }
 
 const activeDateKey = ref(getTodayKey());
+const activeFolderKey = ref('');
 const searchQuery = ref('');
 const isSyncing = ref(false);
 
@@ -60,6 +61,15 @@ const filteredItems = computed(() => {
         return year === parts[0] && month === parts[1] && day === parts[2];
       }
       return year === key;
+    });
+  }
+
+  // 文件夹筛选
+  if (activeFolderKey.value) {
+    const folderKey = activeFolderKey.value;
+    list = list.filter((m) => {
+      if (!m.relativePath) return false;
+      return m.relativePath === folderKey || m.relativePath.startsWith(folderKey + '/');
     });
   }
 
@@ -109,7 +119,6 @@ async function loadList() {
     if (res?.success !== false) {
       items.value = (res.data || []) as Material[];
       cateMap.value = res.cateMap || {};
-      console.log('[HomeView] list loaded:', items.value.length, 'items');
     }
   } catch (e: any) {
     console.error('[HomeView] loadList error:', e);
@@ -119,8 +128,16 @@ async function loadList() {
   }
 }
 
-function handleSelectDate(key: string) {
-  activeDateKey.value = key;
+function handleSidebarSelect(key: string) {
+  // 日期 key（年/月/日/all）
+  if (key === 'all' || /^\d{4}(-\d{2}){0,2}$/.test(key)) {
+    activeDateKey.value = key;
+    activeFolderKey.value = '';
+  } else {
+    // 文件夹 key
+    activeDateKey.value = 'all';
+    activeFolderKey.value = key;
+  }
 }
 
 function handleSelectItem(item: Material) {
@@ -262,8 +279,8 @@ onUnmounted(() => { window.removeEventListener('resize', initFabPos); });
       >
         <Sidebar
           :items="items"
-          :selected-key="activeDateKey"
-          @select="handleSelectDate"
+          :selected-key="activeFolderKey || activeDateKey"
+          @select="handleSidebarSelect"
         />
       </a-layout-sider>
 

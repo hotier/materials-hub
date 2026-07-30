@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { getAllMaterials } from '../lib/kv-service';
+import { getAllMaterials, getItem, putItem } from '../lib/kv-service';
 import type { ListResponse, MaterialItem } from '../types';
 
 const listRoute = new Hono<{ Bindings: Env }>();
@@ -14,14 +14,24 @@ const listRoute = new Hono<{ Bindings: Env }>();
 listRoute.get('/', async (c) => {
   const { items, versions } = await getAllMaterials(c.env.KV);
 
-  // 从 R2 获取文件大小（并行 head）
+  // 兼容历史记录：新上传已在元数据中持久化 size；旧记录按批次回填一次，
+  // 避免后续每一次列表请求都对所有对象发起 R2 head。
+  const legacyItems = items
+    .filter((item) => typeof item.size !== 'number')
+    .slice(0, 20);
   await Promise.all(
-    items.map(async (item) => {
+    legacyItems.map(async (item) => {
       try {
         const obj = await c.env.R2.head(item.R2Key);
-        if (obj) (item as any).size = obj.size;
-      } catch {
-        // head 失败静默忽略
+        if (!obj) return;
+
+        item.size = obj.size;
+        const latest = await getItem(c.env.KV, item.id);
+        if (latest && typeof latest.size !== 'number') {
+          await putItem(c.env.KV, { ...latest, size: obj.size });
+        }
+      } catch (err) {
+        console.warn('[list] 回填文件大小失败:', item.id, err);
       }
     }),
   );

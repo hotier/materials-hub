@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build && concurrently -n vite,wrangler \"vite\" \"wrangler pages dev dist/ --port 8787\"",
+    "dev": "concurrently --kill-others-on-fail -n vite,wrangler \"vite\" \"wrangler pages dev --proxy 5173 --port 8787 --log-level warn\"",
     "build": "vite build",
     "deploy": "npm run build && wrangler pages deploy",
-    "preview": "wrangler pages dev dist/ --port 8787",
+    "preview": "npm run build && wrangler pages dev dist/ --port 8788",
     "typecheck": "tsc --noEmit -p tsconfig.server.json",
     "typecheck:fe": "vue-tsc --noEmit"
   },
@@ -26,6 +26,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@arco-plugins/vite-vue": "^1.4.6",
     "@cloudflare/workers-types": "^5",
     "@types/markdown-it": "^14.1.2",
     "@vitejs/plugin-vue": "^5.2.3",

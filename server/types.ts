@@ -14,7 +14,11 @@ export interface MaterialItem {
   tags: string[];
   R2Key: string;
   ext: FileExt;
+  /** 文件字节数；旧数据可能未保存此字段。 */
+  size?: number;
   createTime: string;
+  /** 用户上传时的文件夹相对路径（如 "项目A/图标"），不含 R2 内部目录前缀 */
+  relativePath?: string;
 }
 
 /** API 统一错误响应 */
