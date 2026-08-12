@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
-import { IconCaretRight } from '@arco-design/web-vue/es/icon';
-import type { TreeNodeData } from '@arco-design/web-vue/es/tree/interface';
+import { ref, computed } from 'vue';
+import {
+  IconCaretRight,
+  IconApps,
+  IconCalendar,
+} from '@arco-design/web-vue/es/icon';
 import type { Material } from '@/types';
 
 const props = defineProps<{
@@ -9,245 +12,141 @@ const props = defineProps<{
   selectedKey: string;
 }>();
 
-const emit = defineEmits<{
-  select: [key: string];
-}>();
+const emit = defineEmits<{ (e: 'select', key: string): void }>();
 
-const selectedKeys = ref<string[]>([props.selectedKey]);
-watch(() => props.selectedKey, (val) => {
-  selectedKeys.value = [val];
-});
-
-// ── 把一组物料按 relativePath 构建文件夹子树 ──
-function buildFolderTree(items: Material[]) {
-  const treeMap = new Map<string, Map<string, number>>();
-
-  for (const item of items) {
-    const rp = item.relativePath || '';
-    if (!rp) continue;
-    const parts = rp.split('/');
-    for (let i = 0; i < parts.length; i++) {
-      const parentPath = parts.slice(0, i).join('/');
-      const thisPath = parts.slice(0, i + 1).join('/');
-
-      if (!thisPath) continue;
-      if (!treeMap.has(parentPath)) treeMap.set(parentPath, new Map());
-      const parent = treeMap.get(parentPath)!;
-      parent.set(thisPath, (parent.get(thisPath) || 0) + 1);
-    }
-  }
-
-  function buildNodes(parentPath: string) {
-    const children = treeMap.get(parentPath);
-    if (!children) return [];
-
-    return Array.from(children.entries()).map(([fullPath, count]) => {
-      const name = fullPath.split('/').pop() || fullPath;
-      const hasChildren = treeMap.has(fullPath);
-      const node: Record<string, unknown> = {
-        title: name,
-        key: fullPath,
-      };
-      if (hasChildren) {
-        node.children = buildNodes(fullPath);
-      }
-      return node;
-    });
-  }
-
-  return buildNodes('');
+/** 按时间维度构建：年 -> 月 -> 日 */
+interface TimeDay {
+  day: string;
+  key: string;
 }
-
-// ── 日期树 ──
-const treeData = computed(() => {
-  const tree: Record<string, unknown>[] = [
-    { title: '全部', key: 'all' },
-  ];
-
-  const yearGroups = new Map<string, Map<string, Map<string, Material[]>>>();
-
-  for (const item of props.items) {
-    const date = item.createTime || item.uploadedAt;
-    if (!date) continue;
-    const d = new Date(date);
+interface TimeMonth {
+  month: string;
+  key: string;
+  days: TimeDay[];
+}
+interface TimeYear {
+  year: string;
+  months: TimeMonth[];
+}
+const timeGroups = computed<TimeYear[]>(() => {
+  const years = new Map<string, Map<string, Set<string>>>();
+  for (const m of props.items) {
+    const raw = m.createTime || m.uploadedAt;
+    if (!raw) continue;
+    const d = new Date(raw);
     if (isNaN(d.getTime())) continue;
-    const [year, month, day] = [
-      String(d.getFullYear()),
-      String(d.getMonth() + 1).padStart(2, '0'),
-      String(d.getDate()).padStart(2, '0'),
-    ];
-
-    if (!yearGroups.has(year)) yearGroups.set(year, new Map());
-    const months = yearGroups.get(year)!;
-    if (!months.has(month)) months.set(month, new Map());
-    const days = months.get(month)!;
-    const key = `${year}-${month}-${day}`;
-    if (!days.has(key)) days.set(key, []);
-    days.get(key)!.push(item);
+    const year = String(d.getFullYear());
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const months = years.get(year) ?? new Map<string, Set<string>>();
+    const days = months.get(month) ?? new Set<string>();
+    days.add(day);
+    months.set(month, days);
+    years.set(year, months);
   }
-
-  const years = [...yearGroups.keys()].sort((a, b) => Number(b) - Number(a));
-  for (const year of years) {
-    const months = yearGroups.get(year)!;
-    const sortedMonths = [...months.keys()].sort((a, b) => Number(b) - Number(a));
-    const monthNodes: Record<string, unknown>[] = [];
-    let yearTotal = 0;
-
-    for (const month of sortedMonths) {
-      const days = months.get(month)!;
-      const sortedDayKeys = [...days.keys()].sort((a, b) => {
-        const [, , da] = a.split('-');
-        const [, , db] = b.split('-');
-        return Number(db) - Number(da);
-      });
-      const dayNodes: Record<string, unknown>[] = [];
-      let monthTotal = 0;
-
-      for (const key of sortedDayKeys) {
-        const dayItems = days.get(key)!;
-        const cnt = dayItems.length;
-        const [, , day] = key.split('-');
-        monthTotal += cnt;
-
-        const folderNodes = buildFolderTree(dayItems);
-        const node: Record<string, unknown> = {
-          title: `${Number(day)}日`,
-          key,
-        };
-        if (folderNodes.length > 0) {
-          node.children = folderNodes;
-        }
-        dayNodes.push(node);
-      }
-
-      yearTotal += monthTotal;
-      monthNodes.push({
-        title: `${Number(month)}月`,
-        key: `${year}-${month}`,
-        children: dayNodes,
-      });
-    }
-
-    tree.push({
-      title: `${year}年`,
-      key: year,
-      children: monthNodes,
-    });
-  }
-
-  return tree;
+  return [...years.entries()]
+    .sort((a, b) => Number(b[0]) - Number(a[0]))
+    .map(([year, months]) => ({
+      year,
+      months: [...months.entries()]
+        .sort((a, b) => Number(b[0]) - Number(a[0]))
+        .map(([month, days]) => ({
+          month,
+          key: `${year}-${month}`,
+          days: [...days.values()]
+            .sort((a, b) => Number(b) - Number(a))
+            .map((d) => ({ day: d, key: `${year}-${month}-${d}` })),
+        })),
+    }));
 });
 
-// ── 展开逻辑 ──
-function getParentKeys(key: string): string[] {
-  const parents: string[] = [];
-  const parts = key.split('-');
-  if (parts.length >= 1) parents.push(parts[0]);
-  if (parts.length >= 2) parents.push(`${parts[0]}-${parts[1]}`);
-  return parents;
+/** 初始展开当前选中日期所在分支（仅初始化一次，交给用户自由折叠） */
+function initOpenKeys(): string[] {
+  const keys = new Set<string>();
+  const m = /^(\d{4})(?:-(\d{2}))?/.exec(props.selectedKey);
+  if (m) {
+    if (m[1]) keys.add(m[1]);
+    if (m[1] && m[2]) keys.add(`${m[1]}-${m[2]}`);
+  }
+  return [...keys];
 }
+const openKeys = ref<string[]>(initOpenKeys());
 
-// 递归查找 key 在树中的祖先路径
-function findAncestorPath(key: string, nodes: Record<string, unknown>[]): string[] | null {
-  for (const node of nodes) {
-    if (node.key === key) return [];
-    if (node.children) {
-      const path = findAncestorPath(key, node.children as Record<string, unknown>[]);
-      if (path !== null) {
-        return [node.key as string, ...path];
-      }
-    }
-  }
-  return null;
-}
-
-const expandedKeys = ref<string[]>(getParentKeys(props.selectedKey));
-watch(() => props.selectedKey, (val) => {
-  if (val === 'all' || /^\d{4}(-\d{2}){0,2}$/.test(val)) {
-    expandedKeys.value = getParentKeys(val);
-  } else {
-    // 文件夹 key：查找并展开祖先日期节点
-    const ancestors = findAncestorPath(val, treeData.value);
-    if (ancestors) {
-      expandedKeys.value = [...new Set([...expandedKeys.value, ...ancestors])];
-    }
-  }
-});
-
-function handleSelect(
-  _keys: (string | number)[],
-  data: { node?: TreeNodeData },
-) {
-  const key = data.node?.key;
-  if (key !== undefined) {
-    emit('select', String(key));
-  }
+function onSelect(key: string) {
+  emit('select', key);
 }
 </script>
 
 <template>
-  <div class="sidebar-inner">
-    <a-tree
-      class="sidebar-tree"
-      :data="treeData"
-      :selected-keys="selectedKeys"
-      v-model:expanded-keys="expandedKeys"
-      :show-line="true"
-      block-node
-      @select="handleSelect"
+  <a-menu
+    class="sidebar-menu"
+    :selected-keys="[selectedKey]"
+    :open-keys="openKeys"
+    @menu-item-click="onSelect"
+    @update:open-keys="(keys: string[]) => (openKeys = keys)"
+  >
+    <a-menu-item key="all">
+      <template #icon><IconApps :size="16" /></template>
+      全部
+    </a-menu-item>
+
+    <!-- 按时间（年 -> 月 -> 日）为顶级导航，默认即是时间维度 -->
+    <a-sub-menu
+      v-for="y in timeGroups"
+      :key="y.year"
     >
-      <template #switcher-icon>
-        <span class="tree-caret-wrap">
-          <icon-caret-right :size="12" />
-        </span>
-      </template>
-    </a-tree>
-  </div>
+      <template #icon><IconCalendar :size="16" /></template>
+      <template #title>{{ y.year }} 年</template>
+      <a-sub-menu
+        v-for="mo in y.months"
+        :key="mo.key"
+      >
+        <template #title>{{ Number(mo.month) }} 月</template>
+        <a-menu-item
+          v-for="d in mo.days"
+          :key="d.key"
+        >
+          {{ Number(d.day) }} 日
+        </a-menu-item>
+      </a-sub-menu>
+    </a-sub-menu>
+  </a-menu>
 </template>
 
 <style scoped>
-.sidebar-inner {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: var(--gap-sm) var(--gap-sm) var(--gap-md);
-  overflow: hidden;
+.sidebar-menu {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
 }
 
-.sidebar-tree {
-  flex: 1;
-  overflow: auto;
+/* 菜单项上下间距收紧 */
+.sidebar-menu :deep(.arco-menu-item),
+.sidebar-menu :deep(.arco-menu-inline-header) {
+  padding-top: 2px;
+  padding-bottom: 2px;
+  line-height: 20px;
+  height: 24px;
+  min-height: 24px;
 }
 
-.sidebar-tree :deep(.arco-tree-node) {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
+/* 子菜单展开区域 */
+.sidebar-menu :deep(.arco-menu-inline-collection) {
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
-.sidebar-tree :deep(.arco-tree-node-title-text) {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.sidebar-menu :deep(.arco-menu-sub-menu) {
+  margin: 0;
 }
 
-.sidebar-tree :deep(.arco-tree-node-selected .arco-tree-node-title) {
-  color: var(--color-primary);
-}
-
-/* 收起时保留 IconCaretRight 的默认朝向，展开时旋转为朝下。 */
-.tree-caret-wrap {
-  display: inline-flex;
-  transform-origin: center;
+/* 让唯一的展开图标（CaretRight）朝右，展开时旋转朝下 */
+.sidebar-menu :deep(.arco-menu-icon-suffix .arco-icon-caret-right) {
+  transform: rotate(0deg);
   transition: transform 0.2s ease;
 }
-
-/* Arco 会默认旋转 switcher 内的图标；重置它，避免收起时变成朝上。 */
-.sidebar-tree :deep(.tree-caret-wrap .arco-icon-caret-right) {
-  transform: none !important;
-}
-
-.sidebar-tree :deep(.arco-tree-node-switcher-expanded .tree-caret-wrap) {
+.sidebar-menu :deep(.arco-menu-open .arco-menu-icon-suffix .arco-icon-caret-right) {
   transform: rotate(90deg);
 }
-
 </style>

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { IconArrowLeft, IconDownload, IconFile } from '@arco-design/web-vue/es/icon';
 import { useApi } from '@/composables/useApi';
 import { useToast } from '@/composables/useToast';
 import { usePreview } from '@/composables/usePreview';
+import { getExtIcon, getExtColor } from '@/utils/fileType';
 import MdPreview from '@/components/preview/MdPreview.vue';
 import CodePreview from '@/components/preview/CodePreview.vue';
 import MediaPreview from '@/components/preview/MediaPreview.vue';
@@ -21,6 +22,14 @@ const { getCategory } = usePreview();
 
 const item = ref<Material | null>(null);
 const loading = ref(true);
+
+const APP_TITLE = 'Materials Hub';
+
+/** 去掉文件名后缀（仅保留最后一段扩展名） */
+function stripExt(name: string): string {
+  const i = name.lastIndexOf('.');
+  return i > 0 ? name.slice(0, i) : name;
+}
 
 const cat = computed(() => getCategory(item.value));
 
@@ -49,7 +58,7 @@ async function loadItem(id: string) {
     const res = await api.getById(id);
     if (res.success) {
       item.value = res.data as Material;
-      document.title = `${item.value.name || '文件预览'} - Materials Hub`;
+      document.title = stripExt(item.value.name || '文件预览');
     } else {
       toast('文件不存在', 'error');
       router.replace('/');
@@ -63,8 +72,13 @@ async function loadItem(id: string) {
 }
 
 function goBack() {
+  document.title = APP_TITLE;
   router.replace('/')
 }
+
+onUnmounted(() => {
+  document.title = APP_TITLE;
+});
 
 function download() {
   if (!fileUrl.value || !item.value) return;
@@ -75,12 +89,6 @@ function download() {
   a.click();
 }
 
-function formatSize(bytes: number): string {
-  if (!bytes) return '未知';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 </script>
 
 <template>
@@ -93,8 +101,12 @@ function formatSize(bytes: number): string {
         </a-button>
         <div class="header-info">
           <h1 class="header-title">{{ item?.name || '加载中...' }}</h1>
-          <a-tag v-if="item?.ext" size="small" color="arcoblue">{{ item.ext.toUpperCase() }}</a-tag>
-          <span v-if="item" class="header-meta">{{ item.size ? formatSize(item.size) : '' }}</span>
+          <a-tag v-if="item?.ext" size="small" :color="getExtColor(item.ext)">
+            <template #icon>
+              <component :is="getExtIcon(item.ext)" :width="14" :height="14" />
+            </template>
+            {{ item.ext.toUpperCase() }}
+          </a-tag>
         </div>
         <div v-if="showModeToggle" class="view-mode">
           <a-switch v-model="viewMode" checked-value="preview" unchecked-value="source" :type="('text' as any)">
@@ -194,11 +206,6 @@ function formatSize(bytes: number): string {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.header-meta {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-}
 .header-right {
   flex-shrink: 0;
 }
@@ -245,5 +252,27 @@ function formatSize(bytes: number): string {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   margin: 0;
+}
+
+/* 自定义颜色标签：深色文字 + 图标居中 */
+:deep(.arco-tag.arco-tag-custom-color) {
+  color: var(--color-text-2);
+}
+
+:deep(.arco-tag.arco-tag-custom-color .arco-icon-hover.arco-tag-icon-hover:hover::before) {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+:deep(.arco-tag.arco-tag-custom-color .arco-tag-close-btn) {
+  color: var(--color-text-2);
+}
+
+:deep(.arco-tag-icon) {
+  display: inline-flex;
+  align-items: center;
+}
+
+:deep(.arco-tag-icon svg) {
+  display: block;
 }
 </style>

@@ -1,20 +1,16 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   IconUpload,
   IconArrowLeft,
-  IconFile,
-  IconFileImage,
-  IconFileAudio,
-  IconFileVideo,
-  IconFilePdf,
   IconDelete,
   IconFolderAdd,
   IconFolder,
 } from '@arco-design/web-vue/es/icon';
 import { Message } from '@arco-design/web-vue';
 import { useApi } from '@/composables/useApi';
+import { getExtIcon } from '@/utils/fileType';
 import type { FileItem, RequestOption } from '@arco-design/web-vue/es/upload/interfaces';
 import type { TreeNodeData } from '@arco-design/web-vue/es/tree/interface';
 
@@ -28,11 +24,12 @@ const api = useApi();
 const router = useRouter();
 
 const uploadRef = ref<{ submit: (fileItem?: FileItem) => void } | null>(null);
-const folderInputRef = ref<HTMLInputElement | null>(null);
 const fileList = ref<FileItem[]>([]);
 const fileRelativePaths = ref<Record<string, string>>({});
 const uploading = ref(false);
 const dragOver = ref(false);
+let pendingCount = 0;
+let completedCount = 0;
 
 const hasFiles = computed(() => fileList.value.length > 0);
 
@@ -136,52 +133,13 @@ function statusLabel(status?: string): string {
 
 function getFileIcon(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() || '';
-  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico'];
-  const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'flac', 'wma', 'm4a'];
-  const videoExts = ['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm'];
-  const pdfExts = ['pdf'];
-  if (imageExts.includes(ext)) return IconFileImage;
-  if (audioExts.includes(ext)) return IconFileAudio;
-  if (videoExts.includes(ext)) return IconFileVideo;
-  if (pdfExts.includes(ext)) return IconFilePdf;
-  return IconFile;
+  return getExtIcon(ext);
 }
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function handleFolderSelect() {
-  folderInputRef.value?.click();
-}
-
-function onFolderInputChange(e: Event) {
-  const input = e.target as HTMLInputElement;
-  const files = input.files;
-  if (!files?.length) return;
-
-  const folderName = files[0].webkitRelativePath?.split('/')[0] || '';
-
-  const newFiles: FileItem[] = Array.from(files).map((file, i) => {
-    const uid = `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`;
-    const relPath = (file as any).webkitRelativePath || file.name;
-    fileRelativePaths.value[uid] = relPath;
-    return {
-      uid,
-      name: relPath,
-      file,
-      status: 'init' as FileItem['status'],
-      percent: 0,
-      __relativePath: relPath,
-    } as FileItem;
-  });
-  fileList.value = [...fileList.value, ...newFiles];
-  if (folderName) {
-    Message.info(`已选择文件夹「${folderName}」，共 ${files.length} 个文件`);
-  }
-  input.value = '';
 }
 
 function getDisplayName(item: FileItem): string {
@@ -192,13 +150,11 @@ function customRequest(options: RequestOption) {
   const { fileItem, onError, onSuccess } = options;
   const formData = new FormData();
   formData.append('file', fileItem.file as File, fileItem.name);
-  // 文件名取原始文件名（去掉路径前缀）
   const displayName = getDisplayName(fileItem);
   const basename = (displayName || '').replace(/\.[^.]+$/, '').split('/').pop() || '';
   formData.append('name', basename);
   formData.append('desc', '');
   formData.append('tags', '');
-  // 传递文件夹路径（优先从 FileItem 自定义属性取，再回退到 Map 和 File 对象）
   const rawPath = (fileItem as any).__relativePath ||
     fileRelativePaths.value[fileItem.uid] ||
     (fileItem.file as any)?.webkitRelativePath || '';
@@ -219,24 +175,44 @@ function customRequest(options: RequestOption) {
 
 async function handleUploadAll() {
   if (!uploadRef.value) return;
+  const toUpload = fileList.value.filter((f) => f.status === 'init');
+  if (toUpload.length === 0) return;
+  pendingCount = toUpload.length;
+  completedCount = 0;
+  successCount = 0;
+  errorCount = 0;
   uploading.value = true;
   uploadRef.value.submit();
 }
 
-function handleSuccess(item: FileItem) {
-  Message.success(`${getDisplayName(item)} 上传成功`);
-  checkAllDone();
-}
-
-function handleError(item: FileItem) {
-  Message.error(`${getDisplayName(item)} 上传失败`);
-  checkAllDone();
-}
-
-function checkAllDone() {
-  if (fileList.value.every((f) => f.status !== 'init' && f.status !== 'uploading')) {
+function handleError(fileItem: FileItem, error: unknown) {
+  completedCount++;
+  errorCount++;
+  if (completedCount >= pendingCount) {
     uploading.value = false;
+    showUploadSummary();
   }
+}
+
+function handleSuccess(fileItem: FileItem) {
+  completedCount++;
+  successCount++;
+  if (completedCount >= pendingCount) {
+    uploading.value = false;
+    showUploadSummary();
+  }
+}
+
+function showUploadSummary() {
+  if (errorCount === 0) {
+    Message.success(`已成功上传 ${successCount} 个文件`);
+  } else if (successCount === 0) {
+    Message.error(`${errorCount} 个文件上传失败`);
+  } else {
+    Message.warning(`成功 ${successCount} 个，失败 ${errorCount} 个`);
+  }
+  successCount = 0;
+  errorCount = 0;
 }
 
 function removeFile(uid: string) {
@@ -247,17 +223,12 @@ function removeFile(uid: string) {
 function clearList() {
   fileList.value = [];
   fileRelativePaths.value = {};
+  pendingCount = 0;
+  completedCount = 0;
+  uploading.value = false;
 }
 
-function clearDone() {
-  const removedUids = fileList.value
-    .filter((f) => f.status === 'done' || f.status === 'error')
-    .map((f) => f.uid);
-  fileList.value = fileList.value.filter((f) => f.status !== 'done' && f.status !== 'error');
-  for (const uid of removedUids) {
-    delete fileRelativePaths.value[uid];
-  }
-}
+
 
 function onDragOver(e: DragEvent) {
   e.preventDefault();
@@ -324,6 +295,53 @@ async function onDrop(e: DragEvent) {
   });
   fileList.value = [...fileList.value, ...newFiles];
 }
+
+/**
+ * Ctrl+V 粘贴文件（图片、文本等）
+ */
+function onPaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items;
+  if (!items?.length) return;
+
+  const files: File[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind === 'file') {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+
+  if (files.length === 0) return;
+  e.preventDefault();
+
+  const newItems: FileItem[] = files.map((file, i) => {
+    const uid = `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`;
+    const name = file.name || `pasted-${Date.now()}.${file.type.split('/')[1] || 'png'}`;
+    return {
+      uid,
+      name,
+      file,
+      status: 'init' as FileItem['status'],
+      percent: 0,
+    } as FileItem;
+  });
+
+  fileList.value = [...fileList.value, ...newItems];
+  if (newItems.length === 1) {
+    Message.info(`已添加 1 个文件：${newItems[0].name}`);
+  } else {
+    Message.info(`已添加 ${newItems.length} 个文件`);
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('paste', onPaste);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('paste', onPaste);
+});
 </script>
 
 <template>
@@ -348,6 +366,7 @@ async function onDrop(e: DragEvent) {
           @dragleave.capture="onDragLeave"
           @drop.capture="onDrop"
         >
+          <!-- 主上传：支持多文件选择 -->
           <a-upload
             ref="uploadRef"
             v-model:file-list="fileList"
@@ -361,26 +380,29 @@ async function onDrop(e: DragEvent) {
             <template #upload-button>
               <div class="trigger-inner">
                 <div class="trigger-icon"><IconUpload :size="48" /></div>
-                <p class="trigger-title">拖拽文件到此处上传</p>
-                <p class="trigger-hint">或点击此处选择文件，支持批量上传</p>
-                <div class="trigger-actions">
-                  <a-button type="outline" size="small" @click.stop="handleFolderSelect">
-                    <template #icon><IconFolderAdd /></template>
-                    选择文件夹
-                  </a-button>
-                </div>
+                <p class="trigger-title">拖拽文件或文件夹到此处上传</p>
+                <p class="trigger-hint">点击选择文件，拖拽上传文件夹，或 Ctrl+V 粘贴</p>
+                <!-- 次上传：支持文件夹选择 -->
+                <a-upload
+                  v-model:file-list="fileList"
+                  :custom-request="customRequest"
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  directory
+                  multiple
+                  @success="handleSuccess"
+                  @error="handleError"
+                >
+                  <template #upload-button>
+                    <a-button status="primary" variant="outline" class="btn-primary-outline">
+                      <template #icon><IconFolderAdd /></template>
+                      选择文件夹
+                    </a-button>
+                  </template>
+                </a-upload>
               </div>
             </template>
           </a-upload>
-          <!-- 隐藏的文件夹选择 input -->
-          <input
-            ref="folderInputRef"
-            type="file"
-            webkitdirectory
-            multiple
-            hidden
-            @change="onFolderInputChange"
-          />
         </div>
 
         <!-- 进度条 -->
@@ -496,16 +518,20 @@ async function onDrop(e: DragEvent) {
 
       <!-- 操作按钮 -->
       <div v-if="hasFiles" class="upload-actions">
-        <a-button @click="clearList">清空列表</a-button>
-        <a-button @click="clearDone">清空已完成</a-button>
         <a-button
-          type="primary"
+          status="primary"
+          variant="outline"
+          class="btn-primary-outline"
           :loading="uploading"
           :disabled="!fileList.some(f => f.status === 'init')"
           @click="handleUploadAll"
         >
           <template #icon><IconUpload /></template>
           上传全部
+        </a-button>
+        <a-button status="danger" variant="outline" class="btn-danger-outline" @click="clearList">
+          <template #icon><IconDelete /></template>
+          清空列表
         </a-button>
       </div>
     </main>
@@ -568,6 +594,12 @@ async function onDrop(e: DragEvent) {
   display: block;
 }
 
+/* 内层文件夹按钮的 upload 不撑满，保持内容宽度 */
+.trigger-inner :deep(.arco-upload) {
+  width: auto;
+  display: inline-block;
+}
+
 :deep(.arco-upload-list) {
   display: none;
 }
@@ -606,10 +638,6 @@ async function onDrop(e: DragEvent) {
   color: var(--color-text-tertiary);
   margin: 0;
 }
-.trigger-actions {
-  margin-top: var(--gap-sm);
-}
-
 /* ── 文件区域 ── */
 .file-section {
   border-top: 1px dashed var(--color-border);
@@ -756,8 +784,32 @@ async function onDrop(e: DragEvent) {
 /* ── 操作按钮 ── */
 .upload-actions {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   gap: var(--gap-sm);
+}
+
+/* 蓝色轮廓按钮：覆盖 Arco 默认灰色 */
+.btn-primary-outline {
+  color: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+  background: transparent !important;
+}
+.btn-primary-outline:hover {
+  color: #fff !important;
+  background: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+}
+
+/* 红色轮廓按钮 */
+.btn-danger-outline {
+  color: rgb(var(--danger-6)) !important;
+  border-color: rgb(var(--danger-6)) !important;
+  background: transparent !important;
+}
+.btn-danger-outline:hover {
+  color: #fff !important;
+  background: rgb(var(--danger-6)) !important;
+  border-color: rgb(var(--danger-6)) !important;
 }
 
 /* ── 响应式 ── */

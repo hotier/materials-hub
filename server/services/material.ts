@@ -22,7 +22,7 @@ import {
   deleteFromR2,
   generateId,
 } from './r2';
-import { getShanghaiDate, getMime } from '../helpers';
+import { getShanghaiDate, getShanghaiTimestamp, getMime } from '../helpers';
 
 // ===== Create =====
 
@@ -34,7 +34,7 @@ export async function createMaterial(
   origin: string,
 ): Promise<{ item: MaterialItem; previewUrl: string }> {
   const ext = validateFileExt(file.name);
-  if (!ext) throw new ValidationError('不支持的文件格式，仅支持: doc/docx/xls/xlsx/ppt/pptx/pdf/html/jpg/png/gif/svg/txt/md/json/csv/xml/yaml/css/js/ts 等');
+  if (!ext) throw new ValidationError('文件格式不合法（扩展名缺失或被禁止）');
   if (!validateFileSize(file.size)) throw new ValidationError('文件大小不能超过 10MB');
 
   const id = generateId();
@@ -52,7 +52,7 @@ export async function createMaterial(
     ext,
     R2Key,
     size: file.size,
-    createTime: getShanghaiDate(),
+    createTime: getShanghaiTimestamp(),
     relativePath: metadata.relativePath || undefined,
   };
 
@@ -80,7 +80,7 @@ export async function syncMaterial(
   origin: string,
 ): Promise<{ item: MaterialItem; previewUrl: string }> {
   const ext = validateFileExt(file.name);
-  if (!ext) throw new ValidationError('不支持的文件格式');
+  if (!ext) throw new ValidationError('文件格式不合法（扩展名缺失或被禁止）');
   if (!validateFileSize(file.size)) throw new ValidationError('文件大小不能超过 10MB');
 
   const name = metadata.name || file.name.replace(/\.[^.]*$/, '');
@@ -99,7 +99,7 @@ export async function syncMaterial(
     ext,
     R2Key,
     size: file.size,
-    createTime: getShanghaiDate(),
+    createTime: getShanghaiTimestamp(),
   };
 
   try {

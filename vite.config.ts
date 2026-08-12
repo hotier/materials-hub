@@ -4,6 +4,8 @@ import { vitePluginForArco } from '@arco-plugins/vite-vue';
 import AutoImport from 'unplugin-auto-import/vite';
 import Components from 'unplugin-vue-components/vite';
 import { ArcoResolver } from 'unplugin-vue-components/resolvers';
+import Icons from 'unplugin-icons/vite';
+import IconsResolver from 'unplugin-icons/resolver';
 
 export default defineConfig({
   plugins: [
@@ -16,8 +18,18 @@ export default defineConfig({
       imports: ['vue', 'vue-router'],
       dts: 'src/auto-imports.d.ts',
     }),
+    Icons({
+      compiler: 'vue3',
+      defaultStyle: 'display: inline-block;',
+    }),
     Components({
-      resolvers: [ArcoResolver({ sideEffect: true })],
+      resolvers: [
+        ArcoResolver({ sideEffect: true }),
+        IconsResolver({
+          prefix: 'i',
+          enabledCollections: ['mdi', 'tabler', 'proicons', 'prime', 'hugeicons', 'solar', 'material-symbols', 'mingcute', 'ph'],
+        }),
+      ],
       dts: 'src/components.d.ts',
     }),
   ],

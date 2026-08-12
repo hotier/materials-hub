@@ -129,15 +129,28 @@ async function loadList() {
 }
 
 function handleSidebarSelect(key: string) {
-  // 日期 key（年/月/日/all）
+  // 侧边栏仅含「全部 / 按时间」，都是日期维度
   if (key === 'all' || /^\d{4}(-\d{2}){0,2}$/.test(key)) {
     activeDateKey.value = key;
-    activeFolderKey.value = '';
-  } else {
-    // 文件夹 key
-    activeDateKey.value = 'all';
-    activeFolderKey.value = key;
   }
+  // 切换时间维度时，退出文件夹下钻
+  activeFolderKey.value = '';
+}
+
+/** 文件夹下钻：进入某文件夹路径（由列表区点击触发） */
+function handleDrill(path: string) {
+  activeFolderKey.value = path;
+}
+
+/** 点击面包屑回到某层（含空串=全部） */
+function handleCrumb(path: string) {
+  activeFolderKey.value = path;
+}
+
+/** 点击面包屑的时间层级（年/月/日），回到对应时间并退出文件夹下钻 */
+function handleNavigateDate(key: string) {
+  activeDateKey.value = key;
+  activeFolderKey.value = '';
 }
 
 function handleSelectItem(item: Material) {
@@ -279,7 +292,7 @@ onUnmounted(() => { window.removeEventListener('resize', initFabPos); });
       >
         <Sidebar
           :items="items"
-          :selected-key="activeFolderKey || activeDateKey"
+          :selected-key="activeDateKey"
           @select="handleSidebarSelect"
         />
       </a-layout-sider>
@@ -290,10 +303,15 @@ onUnmounted(() => { window.removeEventListener('resize', initFabPos); });
             :items="filteredItems"
             :loading="loading"
             :search-query="searchQuery"
+            :current-folder="activeFolderKey"
+            :date-key="activeDateKey"
             @select="handleSelectItem"
             @edit="handleEdit"
             @delete="handleDelete"
             @batch-delete="handleBatchDelete"
+            @drill="handleDrill"
+            @crumb="handleCrumb"
+            @navigate-date="handleNavigateDate"
             @update:search-query="(v: string) => searchQuery = v"
           />
         </div>

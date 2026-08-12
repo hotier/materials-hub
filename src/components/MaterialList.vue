@@ -1,14 +1,24 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import { IconEdit, IconCopy, IconExport, IconDelete, IconMore } from '@arco-design/web-vue/es/icon';
+import {
+  IconEdit,
+  IconCopy,
+  IconExport,
+  IconDelete,
+  IconMore,
+  IconFolder,
+} from '@arco-design/web-vue/es/icon';
 import type { Material } from '@/types';
-import type { TableColumnData, TableRowSelection } from '@arco-design/web-vue';
+import type { TableColumnData } from '@arco-design/web-vue';
+import { getExtIcon, getExtColor } from '@/utils/fileType';
 
 const props = defineProps<{
   items: Material[];
   loading: boolean;
   searchQuery: string;
+  currentFolder: string;
+  dateKey: string;
 }>();
 
 const emit = defineEmits<{
@@ -17,21 +27,189 @@ const emit = defineEmits<{
   delete: [item: Material];
   batchDelete: [items: Material[]];
   'update:searchQuery': [value: string];
+  drill: [path: string];
+  crumb: [path: string];
+  'navigate-date': [key: string];
 }>();
+
+/* ======== 文件夹下钻 ======== */
+interface FolderEntry {
+  name: string;
+  fullPath: string;
+  count: number;
+}
+
+/** 统一行数据：文件夹或文件 */
+interface UnifiedRow {
+  kind: 'folder' | 'file';
+  key: string;
+  name: string;
+  fullPath: string;
+  count?: number;
+  material?: Material;
+}
+
+/** 判断物料是否属于当前文件夹范围（currentFolder 为空 = 根/某一天） */
+function inScope(rp: string): boolean {
+  if (!props.currentFolder) return true;
+  return rp === props.currentFolder || rp.startsWith(props.currentFolder + '/');
+}
+
+/** 当前文件夹下的「下一级文件夹」列表（含计数）。
+ *  根目录即某一天：当天文件的 relativePath 指向其所在文件夹，
+ *  因此列表先显示文件夹卡片，点击文件夹才下钻显示其内部文件。 */
+const folderList = computed<FolderEntry[]>(() => {
+  const map = new Map<string, FolderEntry>();
+  for (const m of props.items) {
+    const rp = m.relativePath || '';
+    if (!inScope(rp)) continue;
+    const rest = props.currentFolder ? rp.slice(props.currentFolder.length + 1) : rp;
+    if (!rest) continue; // 文件就在此文件夹内，不视为子文件夹
+    const slash = rest.indexOf('/');
+    const name = slash === -1 ? rest : rest.slice(0, slash);
+    const fullPath = props.currentFolder ? `${props.currentFolder}/${name}` : name;
+    const entry = map.get(fullPath) ?? { name, fullPath, count: 0 };
+    entry.count += 1;
+    map.set(fullPath, entry);
+  }
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+});
+
+/** 直接位于当前文件夹内的文件（其 relativePath 即当前文件夹） */
+const fileList = computed<Material[]>(() => {
+  return props.items.filter((m) => {
+    const rp = m.relativePath || '';
+    if (!inScope(rp)) return false;
+    const rest = props.currentFolder ? rp.slice(props.currentFolder.length + 1) : rp;
+    return rest === '';
+  });
+});
+
+/** 统一列表：文件夹与文件混排，按名称排序 */
+const unifiedList = computed<UnifiedRow[]>(() => {
+  const folderRows: UnifiedRow[] = folderList.value.map((f) => ({
+    kind: 'folder',
+    key: `folder:${f.fullPath}`,
+    name: f.name,
+    fullPath: f.fullPath,
+    count: f.count,
+  }));
+  const fileRows: UnifiedRow[] = fileList.value.map((m) => ({
+    kind: 'file',
+    key: `file:${m.id}`,
+    name: m.name,
+    fullPath: m.relativePath || '',
+    material: m,
+  }));
+  return [...folderRows, ...fileRows].sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+});
+
+/** 面包屑：年 - 月 - 日 - 文件夹 - 子文件夹 ... 完整层级路径 */
+interface CrumbItem {
+  label: string;
+  type: 'date' | 'folder';
+  key: string;
+}
+const breadcrumb = computed<CrumbItem[]>(() => {
+  const items: CrumbItem[] = [{ label: '首页', type: 'date', key: 'all' }];
+  if (!props.dateKey || props.dateKey === 'all') {
+    // 只有首页
+  } else {
+    const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$/.exec(props.dateKey);
+    if (m) {
+      if (m[1]) items.push({ label: `${m[1]}年`, type: 'date', key: m[1] });
+      if (m[2]) items.push({ label: `${Number(m[2])}月`, type: 'date', key: `${m[1]}-${m[2]}` });
+      if (m[3]) items.push({ label: `${Number(m[3])}日`, type: 'date', key: `${m[1]}-${m[2]}-${m[3]}` });
+    }
+  }
+  if (props.currentFolder) {
+    const parts = props.currentFolder.split('/');
+    let acc = '';
+    for (const p of parts) {
+      acc = acc ? `${acc}/${p}` : p;
+      items.push({ label: p, type: 'folder', key: acc });
+    }
+  }
+  return items;
+});
+
+function handleDrill(path: string) {
+  emit('drill', path);
+}
+function handleCrumb(path: string) {
+  emit('crumb', path);
+}
+
+/** 行点击：文件夹下钻，文件打开 */
+function handleRowClick(row: UnifiedRow) {
+  if (row.kind === 'folder') {
+    emit('drill', row.fullPath);
+  } else if (row.material) {
+    emit('select', row.material);
+  }
+}
+
+/** 给文件夹行添加特殊 class */
+function getRowClassName(row: UnifiedRow): string {
+  return row.kind === 'folder' ? 'row-folder' : '';
+}
+
+/** 表格容器高度，用于计算 scroll.y */
+const listRef = ref<HTMLElement | null>(null);
+const tableScrollY = ref(300);
+
+function calcScrollY() {
+  if (!listRef.value) return;
+  const h = listRef.value.clientHeight;
+  tableScrollY.value = Math.max(200, h - 48); // 48 = Arco 表头高度
+}
+
+let resizeObserver: ResizeObserver | null = null;
+
+onMounted(() => {
+  nextTick(() => {
+    calcScrollY();
+    if (listRef.value) {
+      resizeObserver = new ResizeObserver(() => calcScrollY());
+      resizeObserver.observe(listRef.value);
+    }
+  });
+});
+
+onUnmounted(() => {
+  resizeObserver?.disconnect();
+});
+
+watch(unifiedList, () => nextTick(() => calcScrollY()));
 
 /* ======== 行选择 ======== */
 const selectedKeys = ref<string[]>([]);
 
-const rowSelection: TableRowSelection = {
-  type: 'checkbox',
+/** 判断行是否为文件（可选中） */
+function isFileRow(row: UnifiedRow): boolean {
+  return row.kind === 'file';
+}
+
+/** 仅允许文件行选中 */
+const rowSelection = computed(() => ({
+  type: 'checkbox' as const,
   showCheckedAll: true,
   onlyCurrent: false,
-};
+  selectable: (row: UnifiedRow) => isFileRow(row),
+}));
 
-const hasSelection = computed(() => selectedKeys.value.length > 0);
+const hasSelection = computed(() => selectedItems.value.length > 0);
 
 const selectedItems = computed(() =>
-  props.items.filter((m) => selectedKeys.value.includes(m.id)),
+  fileList.value.filter((m) => selectedKeys.value.includes(`file:${m.id}`)),
+);
+
+// 切换文件夹 / 筛选条件时清空选择，避免出现不可见项的脏选中
+watch(
+  () => [props.currentFolder, props.searchQuery, props.items],
+  () => {
+    selectedKeys.value = [];
+  },
 );
 
 function clearSelection() {
@@ -68,7 +246,7 @@ const columns: TableColumnData[] = [
   {
     title: '类型',
     dataIndex: 'ext',
-    width: 80,
+    width: 110,
     slotName: 'ext',
   },
   {
@@ -78,7 +256,6 @@ const columns: TableColumnData[] = [
   },
   {
     title: '大小',
-    dataIndex: 'size',
     width: 90,
     slotName: 'size',
   },
@@ -95,9 +272,12 @@ function formatDate(ts?: number | string): string {
   if (!ts) return '-';
   const d = new Date(ts);
   if (isNaN(d.getTime())) return '-';
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
-  return `${m}/${day} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day} ${hh}:${mm}`;
 }
 
 function formatSize(bytes?: number): string {
@@ -124,10 +304,9 @@ function handleOpenNewWindow(record: Material) {
 </script>
 
 <template>
-  <div class="material-list">
+  <div ref="listRef" class="material-list">
     <!-- 批量操作栏 -->
     <div v-if="hasSelection" class="batch-bar">
-      <span class="batch-count">已选 <strong>{{ selectedKeys.length }}</strong> 项</span>
       <div class="batch-actions">
         <a-button size="small" status="danger" @click="handleBatchDelete">
           <template #icon><IconDelete /></template>
@@ -135,74 +314,115 @@ function handleOpenNewWindow(record: Material) {
         </a-button>
         <a-button size="small" @click="clearSelection">取消选择</a-button>
       </div>
+      <span class="batch-count">已选 <strong>{{ selectedItems.length }}</strong> 项</span>
     </div>
 
-    <!-- 表格 -->
+    <!-- 面包屑：首页 > 年 > 月 > 日 > 文件夹 > 子文件夹 ... -->
+    <a-breadcrumb v-if="breadcrumb.length" class="crumb-bar" separator=">">
+      <a-breadcrumb-item
+        v-for="c in breadcrumb"
+        :key="`${c.type}:${c.key}`"
+        class="crumb-item"
+        @click="c.type === 'date' ? emit('navigate-date', c.key) : emit('crumb', c.key)"
+        >{{ c.label }}</a-breadcrumb-item
+      >
+    </a-breadcrumb>
+
+    <!-- 文件夹与文件统一表格 -->
     <a-table
-      v-if="loading || items.length"
+      v-if="loading || unifiedList.length"
       class="list-table"
+      :class="{ 'has-selection': hasSelection }"
       :columns="columns"
-      :data="items"
+      :data="unifiedList"
       :loading="loading"
       :row-selection="rowSelection"
+      :row-class-name="getRowClassName"
       v-model:selected-keys="selectedKeys"
       :pagination="false"
       :bordered="{ wrapper: true, cell: false }"
       :stripe="true"
       :column-resizable="true"
-      row-key="id"
+      row-key="key"
       :hoverable="true"
       size="medium"
-      :scroll="{ x: 1000 }"
+      :scroll="{ x: 1100, y: tableScrollY }"
     >
       <template #name="{ record }">
-        <span class="cell-name" @click="emit('select', record)">
+        <!-- 文件夹行 -->
+        <span v-if="record.kind === 'folder'" class="cell-folder-name" @click="handleRowClick(record)">
           <a-tooltip :content="record.name" position="top" :mouse-enter-delay="400">
             <span>{{ record.name }}</span>
           </a-tooltip>
         </span>
+        <!-- 文件行 -->
+        <span v-else class="cell-name" @click="emit('select', record.material!)">
+          <a-tooltip :content="record.material?.name" position="top" :mouse-enter-delay="400">
+            <span>{{ record.material?.name }}</span>
+          </a-tooltip>
+        </span>
       </template>
       <template #desc="{ record }">
-        <a-tooltip :content="record.desc || ''" position="top" :mouse-enter-delay="400">
-          <span class="cell-desc">{{ record.desc || '-' }}</span>
-        </a-tooltip>
+        <template v-if="record.kind === 'file'">
+          <a-tooltip :content="record.material?.desc || ''" position="top" :mouse-enter-delay="400">
+            <span class="cell-desc">{{ record.material?.desc || '-' }}</span>
+          </a-tooltip>
+        </template>
+        <span v-else class="cell-muted">-</span>
       </template>
       <template #tags="{ record }">
-        <div class="cell-tags" v-if="record.tags?.length">
-          <a-tag v-for="tag in record.tags" :key="tag" size="small">{{ tag }}</a-tag>
+        <div v-if="record.kind === 'file' && record.material?.tags?.length" class="cell-tags">
+          <a-tag v-for="tag in record.material.tags" :key="tag" size="small">{{ tag }}</a-tag>
         </div>
         <span v-else class="cell-muted">-</span>
       </template>
       <template #ext="{ record }">
-        <a-tag v-if="record.ext" size="small" color="arcoblue">{{ record.ext.toUpperCase() }}</a-tag>
-        <span v-else class="cell-muted">-</span>
+        <template v-if="record.kind === 'file'">
+          <a-tag
+            v-if="record.material?.ext"
+            size="small"
+            :color="getExtColor(record.material.ext)"
+          >
+            <template #icon>
+              <component :is="getExtIcon(record.material.ext)" :width="14" :height="14" />
+            </template>
+            {{ record.material.ext.toUpperCase() }}
+          </a-tag>
+          <span v-else class="cell-muted">-</span>
+        </template>
+        <a-tag v-else class="folder-type-tag">
+            <template #icon><IconFolder :size="14" /></template>
+            文件夹
+          </a-tag>
       </template>
       <template #date="{ record }">
-        <span class="cell-date">{{ formatDate(record.createTime) }}</span>
+        <span v-if="record.kind === 'file'" class="cell-date">{{ formatDate(record.material?.createTime) }}</span>
+        <span v-else class="cell-muted">-</span>
       </template>
       <template #size="{ record }">
-        <span class="cell-size">{{ formatSize(record.size) }}</span>
+        <span v-if="record.kind === 'file'" class="cell-size">{{ formatSize(record.material?.size) }}</span>
+        <span v-else class="cell-muted">-</span>
       </template>
       <template #actions="{ record }">
-        <div class="cell-actions" @click.stop>
+        <div v-if="record.kind === 'file'" class="cell-actions" @click.stop>
           <a-dropdown trigger="click" :popup-max-height="false">
             <span class="action-btn action-more">
               <IconMore :size="18" />
             </span>
             <template #content>
-              <a-doption @click="emit('edit', record)">
+              <a-doption @click="emit('edit', record.material!)">
                 <template #icon><IconEdit /></template>
                 编辑
               </a-doption>
-              <a-doption @click="handleCopyLink(record)">
+              <a-doption @click="handleCopyLink(record.material!)">
                 <template #icon><IconCopy /></template>
                 复制链接
               </a-doption>
-              <a-doption @click="handleOpenNewWindow(record)">
+              <a-doption @click="handleOpenNewWindow(record.material!)">
                 <template #icon><IconExport /></template>
                 新窗口打开
               </a-doption>
-              <a-doption class="menu-item-danger" @click="emit('delete', record)">
+              <a-doption class="menu-item-danger" @click="emit('delete', record.material!)">
                 <template #icon><IconDelete /></template>
                 删除
               </a-doption>
@@ -213,7 +433,10 @@ function handleOpenNewWindow(record: Material) {
     </a-table>
 
     <!-- 空态 -->
-    <div v-else class="list-empty">
+    <div
+      v-if="!loading && !unifiedList.length"
+      class="list-empty"
+    >
       <a-empty v-if="searchQuery.trim()" :description="`未找到「${searchQuery.trim()}」相关结果`" />
       <a-empty v-else description="暂无物料" />
     </div>
@@ -227,17 +450,24 @@ function handleOpenNewWindow(record: Material) {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
 
 /* ======== 批量操作栏 ======== */
 .batch-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px var(--gap-lg);
-  background: var(--color-primary-light-1);
-  border-bottom: 1px solid var(--color-primary-light-2);
-  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.65);
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .batch-count {
   font-size: var(--font-size-sm);
@@ -251,22 +481,134 @@ function handleOpenNewWindow(record: Material) {
   gap: var(--gap-sm);
 }
 
+/* ======== 面包屑（a-breadcrumb） ======== */
+.crumb-bar {
+  padding: 8px var(--gap-lg);
+  border-bottom: 1px solid var(--color-border-light);
+  font-size: var(--font-size-base);
+  flex-shrink: 0;
+  background: var(--color-bg-surface);
+  line-height: 20px;
+}
+.crumb-bar :deep(.arco-breadcrumb-item) {
+  cursor: pointer;
+  margin: 0;
+}
+.crumb-bar :deep(.arco-breadcrumb-item .arco-breadcrumb-text) {
+  color: var(--color-text-3);
+  transition: color var(--duration-fast);
+  font-weight: var(--font-weight-regular);
+}
+.crumb-bar :deep(.arco-breadcrumb-item .arco-breadcrumb-text:hover) {
+  color: var(--color-primary);
+}
+.crumb-bar :deep(.arco-breadcrumb-item:last-child .arco-breadcrumb-text) {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+.crumb-bar :deep(.arco-breadcrumb-separator) {
+  color: var(--color-text-4);
+  margin: 0 4px;
+  font-size: 12px;
+}
+
+/* ======== 文件夹行样式 ======== */
+.cell-folder-name {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-base);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  cursor: pointer;
+}
+.folder-type-tag {
+  background: var(--color-primary-light-1);
+  border: none;
+  color: var(--color-primary);
+}
+
 /* ======== 表格 ======== */
 .list-table {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
-::deep(.arco-table-container) {
+/* 固定表头背景色 */
+.list-table :deep(.arco-table-thead th) {
+  background: var(--color-bg-page);
+}
+
+.list-table :deep(.arco-table-thead th .arco-table-th-item) {
+  background: var(--color-bg-page);
+}
+
+/* 文件夹行视觉区分 */
+.list-table :deep(.arco-table-tr.row-folder) {
+  background: var(--color-primary-light-3, #f2f3f5);
+}
+.list-table :deep(.arco-table-tr.row-folder:hover > .arco-table-td) {
+  background: var(--color-primary-light-2, #e8f3ff) !important;
+}
+.list-table :deep(.arco-table-tr.row-folder .arco-table-td) {
+  background: transparent;
+}
+/* 隐藏文件夹行的复选框 */
+.list-table :deep(.arco-table-tr.row-folder > .arco-table-td.arco-table-checkbox) {
+  display: none;
+}
+
+/* 压缩复选框列宽度 */
+.list-table :deep(.arco-table-selection-checkbox-col) {
+  width: 24px !important;
+  min-width: 24px !important;
+  max-width: 24px !important;
+}
+.list-table :deep(.arco-table-th.arco-table-checkbox),
+.list-table :deep(.arco-table-td.arco-table-checkbox) {
+  padding: 0 !important;
+  text-align: center;
+  justify-content: center;
+}
+.list-table :deep(.arco-table-th.arco-table-checkbox .arco-table-th-item),
+.list-table :deep(.arco-table-td.arco-table-checkbox .arco-table-checkbox) {
+  margin: 0;
+}
+/* 名称列左间距缩小 */
+.list-table :deep(.arco-table-col-1) {
+  padding-left: 4px !important;
+}
+/* 默认隐藏复选框内容，hover 行时显示 */
+.list-table :deep(.arco-table-td.arco-table-checkbox .arco-checkbox) {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+/* 表头全选框始终可见 */
+.list-table :deep(.arco-table-th.arco-table-checkbox .arco-checkbox) {
+  opacity: 1 !important;
+}
+/* hover 行时显示该行复选框 */
+.list-table :deep(.arco-table-tr:hover > .arco-table-td.arco-table-checkbox .arco-checkbox) {
+  opacity: 1;
+}
+/* 有选中项时表头全选框保持显示 */
+.list-table.has-selection :deep(.arco-table-th.arco-table-checkbox .arco-checkbox),
+/* 已选中行的复选框始终显示 */
+.list-table :deep(.arco-table-tr.arco-table-tr-checked > .arco-table-td.arco-table-checkbox .arco-checkbox) {
+  opacity: 1;
+}
+
+.list-table :deep(.arco-table-container) {
   border: none !important;
 }
 
-::deep(.arco-table-th) {
+.list-table :deep(.arco-table-th) {
   font-weight: var(--font-weight-medium);
   color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+  font-size: var(--font-size-base);
   background: var(--color-bg-page);
 }
 
@@ -310,6 +652,29 @@ function handleOpenNewWindow(record: Material) {
   color: var(--color-text-tertiary);
 }
 
+/* Arco 自定义颜色标签默认用白色文字，浅色背景下改为深色 */
+:deep(.arco-tag.arco-tag-custom-color) {
+  color: var(--color-text-2);
+}
+
+:deep(.arco-tag.arco-tag-custom-color .arco-icon-hover.arco-tag-icon-hover:hover::before) {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+:deep(.arco-tag.arco-tag-custom-color .arco-tag-close-btn) {
+  color: var(--color-text-2);
+}
+
+/* 确保图标在标签内垂直居中 */
+:deep(.arco-tag-icon) {
+  display: inline-flex;
+  align-items: center;
+}
+
+:deep(.arco-tag-icon svg) {
+  display: block;
+}
+
 .cell-actions {
   display: flex;
   align-items: center;
@@ -333,13 +698,13 @@ function handleOpenNewWindow(record: Material) {
 }
 
 /* 下拉菜单危险项 */
-:deep(.menu-item-danger) {
+::deep(.menu-item-danger) {
   color: rgb(245, 63, 63) !important;
 }
-:deep(.menu-item-danger:hover) {
+::deep(.menu-item-danger:hover) {
   background: var(--color-danger-light-1) !important;
 }
-:deep(.arco-dropdown-option-icon) {
+::deep(.arco-dropdown-option-icon) {
   display: inline-flex;
   align-items: center;
 }
@@ -350,7 +715,6 @@ function handleOpenNewWindow(record: Material) {
   justify-content: center;
   flex: 1;
 }
-
 </style>
 
 <style>

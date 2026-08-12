@@ -9,7 +9,7 @@ import type { PreviewType } from './types';
 
 // ====== 时间工具 ======
 
-/** 获取 Asia/Shanghai 时区的 YYYY-MM-DD 日期字符串 */
+/** 获取 Asia/Shanghai 时区的 YYYY-MM-DD 日期字符串（用于 R2 路径前缀等） */
 export function getShanghaiDate(): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',
@@ -17,6 +17,36 @@ export function getShanghaiDate(): string {
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
+}
+
+/**
+ * 获取 Asia/Shanghai 时区的完整时间戳字符串（ISO 8601，含时区偏移）。
+ * 例如：2026-08-12T15:30:45+08:00
+ * 注意：createTime 必须使用本函数而非 getShanghaiDate。旧实现只返回 YYYY-MM-DD，
+ * 前端用 new Date() 解析时会被当作 UTC 午夜，在 UTC+8 时区显示为上午 08:00，
+ * 造成"时间被硬编码为 8 点"的假象。
+ */
+export function getShanghaiTimestamp(): string {
+  const now = new Date();
+  const shanghaiTime = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(now);
+
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  const shanghaiMs = utcMs + 8 * 3600000;
+  const offsetMinutes = Math.round((shanghaiMs - utcMs) / 60000);
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMinutes);
+  const offset = `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+
+  return `${shanghaiTime}${offset}`;
 }
 
 // ====== MIME 映射 ======

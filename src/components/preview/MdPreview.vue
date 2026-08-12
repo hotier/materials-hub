@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import MarkdownIt from 'markdown-it';
-import hljs from 'highlight.js';
+import { getHighlighter, highlightCode, mapLang } from '@/composables/useShiki';
 
 const props = defineProps<{ url: string; mode?: 'preview' | 'source' }>();
 
@@ -15,12 +15,7 @@ const md = new MarkdownIt({
   linkify: true,
   typographer: true,
   highlight(str: string, lang: string): string {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(str, { language: lang }).value;
-      } catch {}
-    }
-    return (md as any).utils.escapeHtml(str);
+    return highlightCode(str, mapLang(lang)) || md.utils.escapeHtml(str);
   },
 });
 
@@ -28,6 +23,8 @@ async function load() {
   if (!props.url) return;
   loading.value = true;
   try {
+    // 确保 Shiki 已初始化
+    await getHighlighter();
     const res = await fetch(props.url);
     const text = await res.text();
     rawText.value = text;
@@ -197,9 +194,10 @@ watch(() => props.url, load, { immediate: true });
   color: #d6336c;
 }
 
+/* Shiki 代码块样式 - github-light 主题已自带内联样式，覆盖背景即可 */
 :deep(.markdown-body pre) {
-  background: #1e1e1e;
-  color: #e6e6e6;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-light);
   border-radius: var(--radius-lg);
   padding: 16px 20px;
   overflow-x: auto;

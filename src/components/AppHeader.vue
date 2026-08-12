@@ -40,11 +40,7 @@ async function confirmLogout() {
   <!-- 左侧品牌与导航 -->
   <div class="header-left">
     <div class="header-brand">
-      <svg class="brand-logo" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="32" height="32" rx="9" fill="var(--color-primary)" />
-        <path d="M9 20V12L16 16L23 12V20" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-        <path d="M9 16L16 20L23 16" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <i-mdi-folder-multiple-image class="brand-logo" :width="30" :height="30" />
       <span class="brand-name">素材中心</span>
     </div>
   </div>
@@ -114,6 +110,8 @@ async function confirmLogout() {
 .brand-logo {
   width: 30px;
   height: 30px;
+  color: var(--color-primary);
+  display: inline-block;
 }
 
 .brand-name {
