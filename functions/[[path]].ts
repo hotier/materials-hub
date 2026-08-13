@@ -17,6 +17,7 @@ import loginRoute from '../server/api/login';
 import logoutRoute from '../server/api/logout';
 import sessionRoute from '../server/api/session';
 import syncRoute from '../server/api/sync';
+import downloadRoute from '../server/api/download';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -47,7 +48,6 @@ const api = new Hono<{ Bindings: Env }>();
 api.use('*', csrfGuard);
 
 // ===== 公开路由 =====
-api.route('/list', listRoute);
 api.route('/preview', previewRoute);
 api.route('/raw', rawRoute);
 api.route('/auth-status', authStatusRoute);
@@ -55,6 +55,10 @@ api.route('/login', loginRoute);
 api.route('/logout', logoutRoute);
 
 // ===== 需 Cookie 校验的路由（含速率限制） =====
+api.use('/list', authGuard);
+api.use('/list', rateLimiter({ windowSeconds: 60, maxRequests: 60 }));
+api.route('/list', listRoute);
+
 api.use('/upload', authGuard);
 api.use('/upload', rateLimiter({ windowSeconds: 60, maxRequests: 20 }));
 api.route('/upload', uploadRoute);
@@ -65,6 +69,9 @@ api.route('/item', itemRoute);
 
 api.use('/session', authGuard);
 api.route('/session', sessionRoute);
+
+api.use('/download', authGuard);
+api.route('/download', downloadRoute);
 
 // ===== 同步路由（Bearer Token 认证 + 速率限制） =====
 api.use('/sync/*', syncAuth);
