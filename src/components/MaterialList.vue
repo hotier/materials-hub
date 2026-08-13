@@ -335,7 +335,7 @@ function handleBatchDelete() {
 }
 
 /* ======== 列定义 ======== */
-const columns = computed<TableColumnData[]>(() => [
+const columns = computed(() => [
   {
     title: '名称',
     dataIndex: 'name',
@@ -418,7 +418,7 @@ const columns = computed<TableColumnData[]>(() => [
     fixed: 'right',
     slotName: 'actions',
   },
-]);
+] as TableColumnData[]);
 
 /* ======== 事件 ======== */
 function formatDate(ts?: number | string): string {
