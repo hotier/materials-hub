@@ -18,13 +18,10 @@ previewRoute.get('/', async (c) => {
   if (c.req.query('info') === '1') {
     try {
       const item = await getMaterialById(c.env, id.trim());
-      return c.json(item);
+      return c.json({ success: true, data: item });
     } catch (err) {
       if (err instanceof NotFoundError) {
-        return c.html(
-          '<h2 style="padding:40px;text-align:center;color:#999">产出不存在</h2>',
-          404,
-        );
+        return c.json({ success: false, message: '文件不存在' }, 404);
       }
       throw err;
     }

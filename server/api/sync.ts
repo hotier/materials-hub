@@ -6,8 +6,78 @@ import { ValidationError, NotFoundError } from '../lib/errors';
 import { syncMaterial, deleteMaterial } from '../services/material';
 import { jsonError, stripQuotes } from '../helpers';
 import { ZodError } from 'zod';
+import { getAllMaterials, getItem, putItem } from '../lib/kv-service';
+import { getCategoryByExt } from '../lib/categories';
+import { applyQuery, pickFields, type ListQuery } from '../lib/query';
 
 const syncRoute = new Hono<{ Bindings: Env }>();
+
+/**
+ * GET /api/sync
+ * 返回产出清单（供外部脚本/API 查询）
+ * 支持过滤参数：ext, tag, path, q, offset, limit, fields, sort, order
+ * Authorization: Bearer <SYNC_TOKEN>
+ */
+syncRoute.get('/', async (c) => {
+  const { items: allItems, versions } = await getAllMaterials(c.env.KV);
+
+  // 回填旧记录的 size
+  const legacyItems = allItems
+    .filter((item) => typeof item.size !== 'number')
+    .slice(0, 20);
+  await Promise.all(
+    legacyItems.map(async (item) => {
+      try {
+        const obj = await c.env.R2.head(item.R2Key);
+        if (!obj) return;
+        item.size = obj.size;
+        const latest = await getItem(c.env.KV, item.id);
+        if (latest && typeof latest.size !== 'number') {
+          await putItem(c.env.KV, { ...latest, size: obj.size });
+        }
+      } catch (err) {
+        console.warn('[sync] 回填文件大小失败:', item.id, err);
+      }
+    }),
+  );
+
+  // 解析查询参数
+  const query: ListQuery = {
+    ext: c.req.query('ext') || undefined,
+    tag: c.req.query('tag') || undefined,
+    path: c.req.query('path') || undefined,
+    q: c.req.query('q') || undefined,
+    offset: c.req.query('offset') ? parseInt(c.req.query('offset')!, 10) : undefined,
+    limit: c.req.query('limit') ? parseInt(c.req.query('limit')!, 10) : undefined,
+    fields: c.req.query('fields') || undefined,
+    sort: (c.req.query('sort') as ListQuery['sort']) || undefined,
+    order: (c.req.query('order') as ListQuery['order']) || undefined,
+  };
+
+  const { items: filtered, total } = applyQuery(allItems, query);
+
+  // 构建分类映射（基于全量数据，不受过滤影响）
+  const cateMap: Record<string, number> = {};
+  for (const item of allItems) {
+    const cat = getCategoryByExt(item.ext);
+    cateMap[cat] = (cateMap[cat] || 0) + 1;
+  }
+
+  // 按 fields 裁剪
+  const items = query.fields
+    ? filtered.map((item) => pickFields(item, query.fields))
+    : filtered;
+
+  return c.json({
+    success: true,
+    data: items,
+    count: total,
+    total,
+    cateMap,
+    items,
+    versions: Object.fromEntries(versions),
+  });
+});
 
 /**
  * POST /api/sync
