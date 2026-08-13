@@ -1,36 +1,58 @@
 <template>
-  <!-- 图片 -->
-  <div v-if="cat === 'image'" class="preview-wrap preview-wrap--fill preview-wrap--img">
-    <img :src="src" :alt="name" class="preview-img" @load="emit('rendered')" @error="onMediaError" />
-  </div>
-
-  <!-- 视频 -->
-  <div v-else-if="cat === 'video'" class="preview-wrap preview-wrap--fill preview-wrap--video">
-    <video :src="src" controls playsinline preload="metadata" class="preview-video"
-      @loadedmetadata="emit('rendered')" @error="onMediaError" />
-  </div>
-
-  <!-- 音频 -->
-  <div v-else-if="cat === 'audio'" class="preview-wrap preview-wrap--fill preview-wrap--audio">
-    <div class="audio-card">
-      <div class="audio-icon"><IconMusic :size="56" /></div>
-      <p class="audio-name">{{ name }}</p>
-      <audio :src="src" controls preload="metadata" class="audio-player"
-        @loadedmetadata="emit('rendered')" @error="onMediaError" />
-    </div>
-  </div>
-
-  <!-- HTML -->
-  <div v-else-if="cat === 'html'" class="preview-wrap preview-wrap--fill preview-wrap--html">
-    <iframe
-      v-if="props.mode !== 'source'"
-      :srcdoc="htmlContent"
-      sandbox="allow-scripts allow-same-origin"
-      class="preview-html"
-      @load="emit('rendered')"
+  <div class="preview-wrap preview-wrap--fill">
+    <!-- 非 HTML 类型：loading 时显示 spinner -->
+    <a-spin
+      v-if="loading && cat !== 'html'"
+      :loading="true"
+      class="preview-loading"
+      tip="加载中..."
     />
-    <div v-else class="html-source">
-      <pre><code class="language-html">{{ htmlContent }}</code></pre>
+
+    <!-- HTML 源码模式：loading 时显示 spinner -->
+    <a-spin
+      v-else-if="loading && cat === 'html' && mode === 'source'"
+      :loading="true"
+      class="preview-loading"
+      tip="加载中..."
+    />
+
+    <!-- 图片 -->
+    <div v-else-if="cat === 'image'" class="preview-wrap preview-wrap--fill preview-wrap--img">
+      <img :src="src" :alt="name" class="preview-img" @load="onLoaded" @error="onMediaError" />
+    </div>
+
+    <!-- 视频 -->
+    <div v-else-if="cat === 'video'" class="preview-wrap preview-wrap--fill preview-wrap--video">
+      <video :src="src" controls playsinline preload="metadata" class="preview-video"
+        @loadedmetadata="onLoaded" @error="onMediaError" />
+    </div>
+
+    <!-- 音频 -->
+    <div v-else-if="cat === 'audio'" class="preview-wrap preview-wrap--fill preview-wrap--audio">
+      <div class="audio-card">
+        <div class="audio-icon"><IconMusic :size="56" /></div>
+        <p class="audio-name">{{ name }}</p>
+        <audio :src="src" controls preload="metadata" class="audio-player"
+          @loadedmetadata="onLoaded" @error="onMediaError" />
+      </div>
+    </div>
+
+    <!-- HTML 预览模式：iframe 立即显示，浏览器自行处理加载 -->
+    <div v-else-if="cat === 'html' && mode !== 'source'" class="preview-wrap preview-wrap--fill preview-wrap--html">
+      <iframe
+        :src="src"
+        class="preview-html"
+        @load="onPreviewLoad"
+        @error="onMediaError"
+      />
+    </div>
+
+    <!-- HTML 源码模式：优先显示高亮内容，降级为纯文本 -->
+    <div v-else-if="cat === 'html' && mode === 'source'" class="preview-wrap preview-wrap--fill preview-wrap--html">
+      <div v-if="highlightedHtmlContent" class="html-source html-source--highlighted" v-html="highlightedHtmlContent" />
+      <div v-else class="html-source">
+        <pre><code>{{ htmlContent }}</code></pre>
+      </div>
     </div>
   </div>
 </template>
@@ -39,6 +61,7 @@
 import { ref, watch } from 'vue'
 import { IconMusic } from '@arco-design/web-vue/es/icon'
 import type { PreviewCategory } from '@/composables/usePreview'
+import { getHighlighter } from '@/composables/useShiki'
 
 const props = defineProps<{
   src: string
@@ -49,25 +72,116 @@ const props = defineProps<{
 
 const emit = defineEmits<{ rendered: []; error: [msg: string] }>()
 
+const loading = ref(true)
 const htmlContent = ref('')
+const highlightedHtmlContent = ref('')
+
+function onLoaded() {
+  loading.value = false
+  emit('rendered')
+}
 
 function onMediaError() {
+  loading.value = false
   emit('error', '媒体加载失败')
 }
 
-watch(() => props.src, async () => {
+function onPreviewLoad() {
+  loading.value = false
+  emit('rendered')
+}
+
+function prefetchHtml() {
+  if (htmlContent.value) return
+  fetch(props.src)
+    .then(res => res.text())
+    .then(async text => {
+      htmlContent.value = text
+      try {
+        const highlighter = await getHighlighter()
+        highlightedHtmlContent.value = highlighter.codeToHtml(text, {
+          lang: 'html',
+          theme: 'github-light',
+        })
+      } catch {
+        highlightedHtmlContent.value = ''
+      }
+      if (props.cat === 'html' && props.mode === 'source' && loading.value) {
+        loading.value = false
+        emit('rendered')
+      }
+    })
+    .catch(() => { /* ignore */ })
+}
+
+// 监听 src 变化
+watch(() => props.src, () => {
   if (props.cat === 'html') {
-    try {
-      const res = await fetch(props.src)
-      htmlContent.value = await res.text()
-    } catch { /* ignore */ }
+    htmlContent.value = ''
+    highlightedHtmlContent.value = ''
+    // 预览模式：iframe 立即显示，不需要 loading 阻塞
+    // 但需要标记 loading=true 以便 iframe @load 触发关闭
+    // 这里我们根据模式决定初始 loading 状态
+    if (props.mode === 'source') {
+      loading.value = true
+      prefetchHtml()
+    } else {
+      // 预览模式：iframe 直接渲染，不阻塞
+      loading.value = false
+      emit('rendered')
+      prefetchHtml()
+    }
+  } else {
+    loading.value = true
   }
 }, { immediate: true })
+
+// 监听模式切换
+watch(() => props.mode, () => {
+  if (props.cat !== 'html') return
+  if (props.mode === 'source') {
+    if (htmlContent.value) {
+      loading.value = false
+    } else {
+      loading.value = true
+      prefetchHtml()
+    }
+  } else if (props.mode === 'preview') {
+    loading.value = false
+    prefetchHtml()
+  }
+})
+
+// 监听 cat 变化
+watch(() => props.cat, () => {
+  if (props.cat === 'html') {
+    if (props.mode === 'source' && !htmlContent.value) {
+      loading.value = true
+      prefetchHtml()
+    } else {
+      loading.value = false
+    }
+  } else {
+    loading.value = true
+  }
+})
 </script>
 
 <style scoped>
 .preview-wrap { display: flex; flex-direction: column; }
 .preview-wrap--fill { flex: 1; min-height: 0; }
+
+.preview-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: var(--gap-sm);
+}
+.preview-loading :deep(.arco-spin-children) {
+  margin-left: 0;
+}
 
 .preview-wrap--html { overflow: hidden; }
 
@@ -102,5 +216,25 @@ watch(() => props.src, async () => {
   color: var(--color-text-primary);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.html-source--highlighted {
+  padding: var(--gap-lg);
+}
+.html-source--highlighted :deep(pre) {
+  margin: 0;
+  padding: var(--gap-lg);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+}
+.html-source--highlighted :deep(pre code) {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  white-space: pre;
+  word-break: normal;
 }
 </style>

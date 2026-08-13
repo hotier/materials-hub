@@ -53,11 +53,16 @@ watch(() => props.ext, () => {
   height: 100%;
   overflow: auto;
 }
-.code-loading {
+.preview-loading {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
+  gap: var(--gap-sm);
+}
+.preview-loading :deep(.arco-spin-children) {
+  margin-left: 0;
 }
 .code-wrap {
   padding: var(--gap-lg);

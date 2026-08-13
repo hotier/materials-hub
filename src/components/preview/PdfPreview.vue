@@ -27,6 +27,11 @@ const contentRef = ref<HTMLElement>()
 const thumbListRef = ref<HTMLElement>()
 const renderedPages = new Set<number>()
 const pendingRenders = new Set<Promise<void>>()
+const isProgrammaticScrolling = ref(false)
+const renderedThumbnails = new Set<number>()
+let thumbnailObserver: IntersectionObserver | null = null
+const thumbPageMap = new WeakMap<Element, number>()
+let pageObserver: IntersectionObserver | null = null
 
 // ---- helpers ----
 function clamp(v: number, min: number, max: number) {
@@ -129,35 +134,107 @@ function tracked(p: Promise<void>) {
   p.finally(() => pendingRenders.delete(p))
 }
 
-// ---- render all pages progressively ----
+// ---- render pages progressively via IntersectionObserver ----
+function setupPageObserver() {
+  if (pageObserver || !contentRef.value) return
+  pageObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) {
+        const pageNum = parseInt((entry.target as HTMLElement).dataset.page || '1')
+        if (!renderedPages.has(pageNum)) {
+          tracked(renderPage(pageNum))
+        }
+        // also pre-render adjacent pages
+        if (pageNum > 1 && !renderedPages.has(pageNum - 1)) {
+          tracked(renderPage(pageNum - 1))
+        }
+        if (pageNum < pageCount.value && !renderedPages.has(pageNum + 1)) {
+          tracked(renderPage(pageNum + 1))
+        }
+      }
+    }
+  }, {
+    root: contentRef.value,
+    rootMargin: '200px',
+    threshold: 0
+  })
+}
+
 function renderAll() {
   renderedPages.clear()
-  for (let i = 1; i <= pageCount.value; i++) {
-    tracked(renderPage(i))
-  }
-  nextTick(() => scrollThumbIntoView(currentPage.value))
+  nextTick(() => {
+    setupPageObserver()
+    // observe all page wrappers
+    for (const key in pageContainers) {
+      const el = pageContainers[key]
+      if (el && pageObserver) {
+        pageObserver.observe(el)
+      }
+    }
+    // immediately render first page and its neighbors
+    for (let i = 1; i <= Math.min(pageCount.value, 3); i++) {
+      tracked(renderPage(i))
+    }
+    // set up thumbnail observer
+    setupThumbnailObserver()
+    for (const key in thumbItems) {
+      if (thumbItems[key] && thumbnailObserver) {
+        thumbnailObserver.observe(thumbItems[key])
+      }
+    }
+    // manually trigger rendering of first few visible thumbnails
+    for (let i = 1; i <= Math.min(pageCount.value, 10); i++) {
+      renderThumbnail(i)
+    }
+    scrollThumbIntoView(currentPage.value)
+  })
 }
 
 // ---- thumbnails ----
+function setupThumbnailObserver() {
+  if (thumbnailObserver || !thumbListRef.value) return
+  thumbnailObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) {
+        const pageNum = thumbPageMap.get(entry.target)
+        if (pageNum !== undefined) {
+          renderThumbnail(pageNum)
+        }
+      }
+    }
+  }, {
+    root: thumbListRef.value,
+    rootMargin: '100px',
+    threshold: 0
+  })
+}
+
 async function renderThumbnail(pageNum: number) {
-  if (!pdfDoc) return
+  if (!pdfDoc || renderedThumbnails.has(pageNum)) return
   const canvas = thumbCanvases[pageNum]
   if (!canvas) return
-  const page = await pdfDoc.getPage(pageNum)
-  const dpr = window.devicePixelRatio || 1
-  const thumbScale = 0.25 * dpr
-  const viewport = page.getViewport({ scale: thumbScale })
-  canvas.height = viewport.height
-  canvas.width = viewport.width
-  canvas.style.height = `${viewport.height / dpr}px`
-  canvas.style.width = `${viewport.width / dpr}px`
-  await page.render({ canvas, viewport }).promise
+  try {
+    const page = await pdfDoc.getPage(pageNum)
+    if (!canvas.isConnected) return
+    renderedThumbnails.add(pageNum)
+    const dpr = window.devicePixelRatio || 1
+    const thumbScale = 0.25 * dpr
+    const viewport = page.getViewport({ scale: thumbScale })
+    if (canvas.height !== viewport.height || canvas.width !== viewport.width) {
+      canvas.height = viewport.height
+      canvas.width = viewport.width
+      canvas.style.height = `${viewport.height / dpr}px`
+      canvas.style.width = `${viewport.width / dpr}px`
+    }
+    await page.render({ canvas, viewport }).promise
+  } catch (e) {
+    renderedThumbnails.delete(pageNum)
+  }
 }
 
 function setThumbCanvas(page: number, el: any) {
   if (el) {
     thumbCanvases[page] = el as HTMLCanvasElement
-    renderThumbnail(page)
   }
 }
 
@@ -170,10 +247,21 @@ function scrollThumbIntoView(page: number) {
 
 // ---- page refs for template ----
 function setPageRef(page: number, el: any) {
-  if (el) pageContainers[page] = el as HTMLElement
+  if (el) {
+    pageContainers[page] = el as HTMLElement
+    if (pageObserver) {
+      pageObserver.observe(el)
+    }
+  }
 }
 function setThumbRef(page: number, el: any) {
-  if (el) thumbItems[page] = el as HTMLElement
+  if (el) {
+    thumbItems[page] = el as HTMLElement
+    thumbPageMap.set(el as HTMLElement, page)
+    if (thumbnailObserver) {
+      thumbnailObserver.observe(el)
+    }
+  }
 }
 function setPageCanvas(page: number, el: any) {
   if (el && !aborted) {
@@ -186,13 +274,35 @@ function setTextLayer(page: number, el: any) {
 }
 
 // ---- navigation ----
+let scrollEndRaf: number | null = null
 function goToPage(page: number) {
   const p = clamp(Math.trunc(page) || 1, 1, pageCount.value)
+  isProgrammaticScrolling.value = true
   currentPage.value = p
   pageInput.value = p
+  // pre-render adjacent thumbnails
+  for (let i = Math.max(1, p - 2); i <= Math.min(pageCount.value, p + 2); i++) {
+    renderThumbnail(i)
+  }
   const el = pageContainers[p]
   if (el && contentRef.value) {
     el.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    // detect scroll end via requestAnimationFrame
+    if (scrollEndRaf) cancelAnimationFrame(scrollEndRaf)
+    let lastScrollTop = -1
+    const checkScrollEnd = () => {
+      if (!contentRef.value) { isProgrammaticScrolling.value = false; return }
+      const currentScrollTop = contentRef.value.scrollTop
+      if (currentScrollTop === lastScrollTop) {
+        isProgrammaticScrolling.value = false
+        return
+      }
+      lastScrollTop = currentScrollTop
+      scrollEndRaf = requestAnimationFrame(checkScrollEnd)
+    }
+    scrollEndRaf = requestAnimationFrame(checkScrollEnd)
+  } else {
+    isProgrammaticScrolling.value = false
   }
   scrollThumbIntoView(p)
 }
@@ -234,6 +344,7 @@ function fitWidth() {
 
 function rerender() {
   renderedPages.clear()
+  // force re-render all pages since zoom changed
   for (let i = 1; i <= pageCount.value; i++) {
     tracked(renderPage(i))
   }
@@ -242,10 +353,11 @@ function rerender() {
 // ---- scroll-based page detection ----
 let scrollTicking = false
 function onContentScroll() {
+  if (isProgrammaticScrolling.value) return
   if (scrollTicking) return
   scrollTicking = true
   requestAnimationFrame(() => {
-    if (!contentRef.value) return
+    if (!contentRef.value) { scrollTicking = false; return }
     const containers = Object.values(pageContainers)
     let nearest = 1
     let minDist = Infinity
@@ -260,6 +372,10 @@ function onContentScroll() {
     if (nearest !== currentPage.value) {
       currentPage.value = nearest
       pageInput.value = nearest
+      // pre-render adjacent thumbnails for smooth scrolling
+      for (let i = Math.max(1, nearest - 2); i <= Math.min(pageCount.value, nearest + 2); i++) {
+        renderThumbnail(i)
+      }
       scrollThumbIntoView(nearest)
     }
     scrollTicking = false
@@ -281,13 +397,34 @@ onMounted(() => {
 onBeforeUnmount(() => {
   aborted = true
   document.removeEventListener('keydown', onKeydown)
+  if (scrollEndRaf) cancelAnimationFrame(scrollEndRaf)
+  if (thumbnailObserver) {
+    thumbnailObserver.disconnect()
+    thumbnailObserver = null
+  }
+  if (pageObserver) {
+    pageObserver.disconnect()
+    pageObserver = null
+  }
   pdfDoc?.destroy()
   pdfDoc = null
   pendingRenders.clear()
   renderedPages.clear()
+  renderedThumbnails.clear()
 })
 
 watch(() => props.url, () => {
+  if (thumbnailObserver) {
+    thumbnailObserver.disconnect()
+    thumbnailObserver = null
+  }
+  if (pageObserver) {
+    pageObserver.disconnect()
+    pageObserver = null
+  }
+  renderedThumbnails.clear()
+  for (const key in thumbCanvases) delete thumbCanvases[key]
+  for (const key in thumbItems) delete thumbItems[key]
   if (pdfDoc) { pdfDoc.destroy(); pdfDoc = null }
   renderedPages.clear()
   loadDoc()
@@ -305,8 +442,8 @@ watch(() => props.url, () => {
     </div>
 
     <!-- Loading -->
-    <div v-else-if="loading" class="pdf-loading">
-      <a-spin :loading="true" tip="解析 PDF 中..." />
+    <div v-else-if="loading" class="preview-loading">
+      <a-spin :loading="true" tip="加载中..." />
     </div>
 
     <template v-else>
@@ -419,8 +556,7 @@ watch(() => props.url, () => {
 }
 
 /* ====== Error / Loading ====== */
-.pdf-error,
-.pdf-loading {
+.pdf-error {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -431,12 +567,24 @@ watch(() => props.url, () => {
 }
 .pdf-error svg { color: var(--color-danger); }
 
+.preview-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-sm);
+  flex: 1;
+}
+.preview-loading :deep(.arco-spin-children) {
+  margin-left: 0;
+}
+
 /* ====== Sidebar ====== */
 .pdf-sidebar {
   width: 200px;
   min-width: 200px;
-  background: #ebebeb;
-  border-right: 1px solid #d9d9d9;
+  background: #f5f5f5;
+  border-right: 1px solid #e8e8e8;
   display: flex;
   flex-direction: column;
   transition: width 0.2s, min-width 0.2s, opacity 0.2s;
@@ -458,7 +606,7 @@ watch(() => props.url, () => {
   font-size: 12px;
   color: #666;
   flex-shrink: 0;
-  border-bottom: 1px solid #d9d9d9;
+  border-bottom: 1px solid #e8e8e8;
   box-sizing: border-box;
 }
 
@@ -470,6 +618,7 @@ watch(() => props.url, () => {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  will-change: scroll-position;
 }
 
 .thumb-item {
@@ -482,6 +631,7 @@ watch(() => props.url, () => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  contain: content;
 }
 .thumb-item:hover { border-color: #bbb; }
 .thumb-item.active { border-color: #4a90d9; }
@@ -490,6 +640,7 @@ watch(() => props.url, () => {
   display: block;
   max-width: 160px;
   height: auto;
+  background: #fff;
 }
 .thumb-label {
   font-size: 10px;
@@ -512,8 +663,8 @@ watch(() => props.url, () => {
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background: #e8e8e8;
-  border-bottom: 1px solid #d9d9d9;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e8e8e8;
   flex-shrink: 0;
   gap: 12px;
 }
@@ -537,7 +688,7 @@ watch(() => props.url, () => {
   border-radius: 4px;
   transition: background 0.15s, color 0.15s;
 }
-.toolbar-btn:hover { background: #d9d9d9; color: #333; }
+.toolbar-btn:hover { background: #e8e8e8; color: #333; }
 .toolbar-btn:disabled { opacity: 0.3; cursor: default; }
 .toolbar-btn:disabled:hover { background: none; color: #666; }
 
@@ -575,15 +726,17 @@ watch(() => props.url, () => {
   flex-direction: column;
   align-items: center;
   gap: 16px;
+  will-change: scroll-position;
 }
 .pdf-content::-webkit-scrollbar { width: 8px; }
-.pdf-content::-webkit-scrollbar-track { background: #e8e8e8; }
-.pdf-content::-webkit-scrollbar-thumb { background: #bbb; border-radius: 4px; }
+.pdf-content::-webkit-scrollbar-track { background: #f0f0f0; }
+.pdf-content::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
 
 .page-wrapper {
   display: flex;
   flex-direction: column;
   align-items: center;
+  contain: layout paint;
 }
 
 .page-container {
@@ -591,6 +744,7 @@ watch(() => props.url, () => {
   box-shadow: 0 2px 16px rgba(0,0,0,0.4);
   background: #fff;
   line-height: 0;
+  contain: layout paint;
 }
 .page-container canvas {
   display: block;

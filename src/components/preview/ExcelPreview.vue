@@ -1,6 +1,6 @@
 <template>
   <div class="preview-wrap preview-wrap--fill">
-    <div v-if="loading" class="excel-loading">加载中...</div>
+    <a-spin v-if="loading" :loading="true" class="preview-loading" tip="加载中..." />
     <div v-else-if="error" class="excel-error">{{ error }}</div>
     <template v-else>
       <div class="excel-table-wrap">
@@ -134,13 +134,27 @@ watch(() => props.url, () => { load() }, { immediate: true })
 .preview-wrap { display: flex; flex-direction: column; }
 .preview-wrap--fill { flex: 1; min-height: 0; }
 
-.excel-loading,
+.preview-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: var(--gap-sm);
+}
+.preview-loading :deep(.arco-spin-children) {
+  margin-left: 0;
+}
+
 .excel-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
   padding: 40px;
   text-align: center;
-  color: #999;
+  color: #e74c3c;
 }
-.excel-error { color: #e74c3c; }
 
 .excel-table-wrap {
   flex: 1;

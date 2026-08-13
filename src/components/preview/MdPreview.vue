@@ -9,26 +9,108 @@ const html = ref('');
 const rawText = ref('');
 const loading = ref(true);
 const isSource = computed(() => props.mode === 'source');
+const contentRef = ref<HTMLElement | null>(null);
 
 const md = new MarkdownIt({
   html: true,
   linkify: true,
   typographer: true,
-  highlight(str: string, lang: string): string {
-    return highlightCode(str, mapLang(lang)) || md.utils.escapeHtml(str);
-  },
 });
+
+// 将 highlight 函数保存为变量，供自定义渲染器使用
+const highlightFn = (str: string, lang: string): string =>
+  highlightCode(str, mapLang(lang)) || md.utils.escapeHtml(str);
+
+// Tabler icons as inline SVG strings (24x24 viewBox, stroke-width 1.5)
+const ICON_COPY = '<svg class="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>'
+const ICON_CHECK = '<svg class="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 10-11"/></svg>'
+
+// 代码块自定义渲染：添加容器、语言标签和复制按钮
+md.renderer.rules.fence = (tokens, idx, _options, _env, _self) => {
+  const token = tokens[idx];
+  const info = token.info ? md.utils.unescapeAll(token.info).trim() : '';
+  const langClass = info ? `language-${md.utils.escapeHtml(info)}` : '';
+  const langLabel = info || 'plaintext';
+  const highlighted = highlightFn(token.content, info);
+  const codeContent = highlighted || md.utils.escapeHtml(token.content);
+  return (
+    `<div class="code-block-wrapper">` +
+    `<div class="code-block-header">` +
+    `<span class="code-block-lang">${md.utils.escapeHtml(langLabel)}</span>` +
+    `<button class="code-copy-btn" type="button">${ICON_COPY}<span>复制</span></button>` +
+    `</div>` +
+    `<pre><code class="${langClass}">${codeContent}</code></pre>` +
+    `</div>\n`
+  );
+};
+
+md.renderer.rules.code_block = (tokens, idx, _options, _env, _self) => {
+  const token = tokens[idx];
+  const escaped = md.utils.escapeHtml(token.content);
+  return (
+    `<div class="code-block-wrapper">` +
+    `<div class="code-block-header">` +
+    `<span class="code-block-lang">plaintext</span>` +
+    `<button class="code-copy-btn" type="button">${ICON_COPY}<span>复制</span></button>` +
+    `</div>` +
+    `<pre><code>${escaped}</code></pre>` +
+    `</div>\n`
+  );
+};
+
+function handleCopyClick(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+  const btn = target.closest('.code-copy-btn') as HTMLElement | null;
+  if (!btn) return;
+  const wrapper = btn.closest('.code-block-wrapper');
+  const codeBlock = wrapper?.querySelector('code');
+  if (!codeBlock) return;
+  navigator.clipboard.writeText(codeBlock.textContent || '').then(() => {
+    const original = btn.innerHTML;
+    btn.innerHTML = `${ICON_CHECK}<span>已复制</span>`;
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.innerHTML = original;
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+}
+
+// 修复 markdown-it 解析加粗时的局限性：
+// markdown-it 判断 `**` 是否为合法闭合标记时，可能只识别 ASCII 范围的标点。
+// 当 `**` 闭合前是 CJK 标点（如 。 ， ！ 等）且紧跟非空白字符时，
+// markdown-it 无法正确将 `**` 识别为闭合标记，导致加粗渲染失败。
+//
+// 修复策略：预处理文本，在有问题的 `**` 附近插入空格。
+// 使用 \p{P} 匹配所有 Unicode 标点（需配合 u flag），避免维护标点白名单。
+
+function fixBold(text: string): string {
+  // 修复1: **内容[标点]**紧跟非空白字符 → 在 ** 后插入空格
+  // 例如：**第一步：维度打分。**对照 → **第一步：维度打分。** 对照
+  text = text.replace(
+    /\*\*([^*]*?\p{P})\*\*(\S)/gu,
+    '**$1** $2',
+  );
+
+  // 修复2: [非空白][标点]**内容** → 在 ** 前插入空格
+  // 例如：）**注意**事项 → ） **注意** 事项
+  text = text.replace(
+    /(\S\p{P})\*\*(\S)/gu,
+    '$1 **$2',
+  );
+
+  return text;
+}
 
 async function load() {
   if (!props.url) return;
   loading.value = true;
   try {
-    // 确保 Shiki 已初始化
     await getHighlighter();
     const res = await fetch(props.url);
     const text = await res.text();
     rawText.value = text;
-    html.value = md.render(text);
+    html.value = md.render(fixBold(text));
   } catch {
     html.value = '<p style="color:var(--color-text-tertiary)">加载失败</p>';
     rawText.value = '';
@@ -42,10 +124,15 @@ watch(() => props.url, load, { immediate: true });
 
 <template>
   <div class="md-preview">
-    <a-spin v-if="loading" :loading="true" class="md-loading" tip="加载中..." />
+    <a-spin v-if="loading" :loading="true" class="preview-loading" tip="加载中..." />
     <template v-else>
       <div v-if="!isSource" class="md-content">
-        <div class="md-content-inner markdown-body" v-html="html" />
+        <div
+          ref="contentRef"
+          class="md-content-inner markdown-body"
+          v-html="html"
+          @click="handleCopyClick"
+        />
       </div>
       <div v-else class="md-source">
         <pre><code class="language-markdown">{{ rawText }}</code></pre>
@@ -62,11 +149,16 @@ watch(() => props.url, load, { immediate: true });
   overflow: hidden;
 }
 
-.md-loading {
+.preview-loading {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   flex: 1;
+  gap: var(--gap-sm);
+}
+.preview-loading :deep(.arco-spin-children) {
+  margin-left: 0;
 }
 
 .md-source {
@@ -145,13 +237,20 @@ watch(() => props.url, load, { immediate: true });
   margin: 0.9em 0;
 }
 
-:deep(.markdown-body strong) {
-  font-weight: 600;
+:deep(.markdown-body strong),
+:deep(.markdown-body b) {
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-primary);
 }
 
 :deep(.markdown-body em) {
   color: var(--color-text-secondary);
+}
+
+:deep(.markdown-body del),
+:deep(.markdown-body s) {
+  color: var(--color-text-tertiary);
+  text-decoration: line-through;
 }
 
 :deep(.markdown-body ul),
@@ -194,14 +293,75 @@ watch(() => props.url, load, { immediate: true });
   color: #d6336c;
 }
 
-/* Shiki 代码块样式 - github-light 主题已自带内联样式，覆盖背景即可 */
+/* 代码块容器：语言标签 + 复制按钮 */
+:deep(.markdown-body .code-block-wrapper) {
+  position: relative;
+  margin: 1em 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface);
+  overflow: hidden;
+}
+
+:deep(.markdown-body .code-block-header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--color-bg-page);
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+:deep(.markdown-body .code-block-lang) {
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+:deep(.markdown-body .code-copy-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.6;
+}
+
+:deep(.markdown-body .code-copy-btn .cp-icon) {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+:deep(.markdown-body .code-copy-btn:hover) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+:deep(.markdown-body .code-copy-btn.copied) {
+  color: var(--color-success);
+  border-color: var(--color-success);
+  background: var(--color-success-subtle);
+}
+
+/* 代码块 pre 样式 */
 :deep(.markdown-body pre) {
   background: var(--color-bg-surface);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-lg);
+  border: none;
+  border-radius: 0;
   padding: 16px 20px;
   overflow-x: auto;
-  margin: 1em 0;
+  margin: 0;
   line-height: 1.6;
 }
 
@@ -259,7 +419,7 @@ watch(() => props.url, load, { immediate: true });
 :deep(.markdown-body th),
 :deep(.markdown-body td) {
   padding: 8px 14px;
-  border: 1px solid var(--color-border);
+  border: 1px solid #d1d1d6;
   text-align: left;
 }
 
