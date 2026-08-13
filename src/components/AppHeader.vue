@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { IconSync, IconRefresh, IconExport } from '@arco-design/web-vue/es/icon';
 import { useApi } from '@/composables/useApi';
 
-defineProps<{
+const props = defineProps<{
   searchQuery: string;
   isSyncing: boolean;
   loading: boolean;
@@ -19,6 +19,29 @@ const emit = defineEmits<{
 const router = useRouter();
 const { logout: apiLogout, clearAuth } = useApi();
 const showLogout = ref(false);
+
+/** 搜索框内部双向绑定：避免 Arco 事件传参类型不一致导致的同步问题 */
+const searchValue = computed<string>({
+  get: () => props.searchQuery,
+  set: (v) => {
+    const next = typeof v === 'string' ? v : '';
+    if (next !== props.searchQuery) emit('update:searchQuery', next);
+  },
+});
+
+function onSearch() {
+  // 先同步（避免回车/按钮触发时搜索词已改但 props.searchQuery 还没刷新）再刷新
+  const v = props.searchQuery;
+  if (v !== '') {
+    // 若 props 还没被 Vue 同步完成，这里不触发额外动作，因为 computed setter 已经 emit 了
+  }
+  emit('refresh');
+}
+
+function onClear() {
+  // allow-clear 下点击 × 按钮，清空搜索（无论 v-model 是否已同步，显式 emit 确保父级一定清掉）
+  emit('update:searchQuery', '');
+}
 
 function handleLogout() {
   showLogout.value = true;
@@ -48,14 +71,14 @@ async function confirmLogout() {
   <!-- 中间搜索 -->
   <div class="header-center">
     <a-input-search
-      :model-value="searchQuery"
+      v-model="searchValue"
       placeholder="搜索素材..."
       allow-clear
       size="medium"
       search-button
       :loading="loading"
-      @update:model-value="(v: string) => emit('update:searchQuery', v)"
-      @search="emit('refresh')"
+      @search="onSearch"
+      @clear="onClear"
     />
   </div>
 

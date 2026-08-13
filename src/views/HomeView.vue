@@ -73,26 +73,40 @@ const filteredItems = computed(() => {
     });
   }
 
-  // 搜索（加权排序：文件名 > 描述 > 标签）
+  // 搜索（加权排序：文件名精确前缀 > 文件名/扩展名包含 > 路径 > 描述 > 标签）
   const q = searchQuery.value.trim().toLowerCase();
   if (q) {
     list = list
       .map((m) => {
-        let score = 0
-        if (m.filename?.toLowerCase().includes(q) || m.name?.toLowerCase().includes(q))
-          score += 10
-        if (m.desc?.toLowerCase().includes(q))
-          score += 5
-        if (m.tags?.some((t) => t.toLowerCase().includes(q)))
-          score += 3
-        return { item: m, score }
+        let score = 0;
+        const nameLower = (m.name || m.filename || '').toLowerCase();
+        const extLower = (m.ext || '').toLowerCase();
+        const pathLower = (m.relativePath || '').toLowerCase();
+        const descLower = (m.desc || '').toLowerCase();
+        if (nameLower.startsWith(q) || extLower === q) score += 20;
+        if (nameLower.includes(q) || extLower.includes(q)) score += 10;
+        if (pathLower.includes(q)) score += 5;
+        if (descLower.includes(q)) score += 3;
+        if (m.tags?.some((t) => t.toLowerCase().includes(q))) score += 2;
+        return { item: m, score };
       })
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score)
-      .map(({ item }) => item)
+      .map(({ item }) => item);
   }
   return list;
 });
+
+/** 调试：搜索 / 日期 / 文件夹变化时打印，便于定位状态卡死（必须放在 filteredItems 之后） */
+watch([searchQuery, activeDateKey, activeFolderKey, () => items.value.length], () => {
+  console.log('[HomeView] state:', {
+    search: searchQuery.value,
+    date: activeDateKey.value,
+    folder: activeFolderKey.value,
+    items: items.value.length,
+    filtered: filteredItems.value.length,
+  });
+}, { immediate: true });
 
 defineOptions({ name: 'HomeView' });
 
@@ -166,8 +180,9 @@ function handleSidebarSelect(key: string) {
   if (key === 'all' || /^\d{4}(-\d{2}){0,2}$/.test(key)) {
     activeDateKey.value = key;
   }
-  // 切换时间维度时，退出文件夹下钻
+  // 切换时间维度时，退出文件夹下钻并清空搜索词
   activeFolderKey.value = '';
+  searchQuery.value = '';
 }
 
 /** 文件夹下钻：进入某文件夹路径（由列表区点击触发） */
@@ -186,17 +201,20 @@ function handleDrill(path: string) {
     }
   }
   activeFolderKey.value = path;
+  searchQuery.value = '';
 }
 
 /** 点击面包屑回到某层（含空串=全部） */
 function handleCrumb(path: string) {
   activeFolderKey.value = path;
+  searchQuery.value = '';
 }
 
 /** 点击面包屑的时间层级（年/月/日），回到对应时间并退出文件夹下钻 */
 function handleNavigateDate(key: string) {
   activeDateKey.value = key;
   activeFolderKey.value = '';
+  searchQuery.value = '';
 }
 
 function handleSelectItem(item: Material) {

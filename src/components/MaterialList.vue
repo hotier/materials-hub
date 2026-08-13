@@ -175,6 +175,7 @@ function getRowClassName(row: UnifiedRow): string {
 
 /** 表格容器高度，用于计算 scroll.y */
 const listRef = ref<HTMLElement | null>(null);
+const popupContainer = computed(() => listRef.value ?? undefined);
 const tableScrollY = ref(300);
 
 function calcScrollY() {
@@ -347,19 +348,28 @@ function handleOpenNewWindow(record: Material) {
       >
     </a-breadcrumb>
 
-    <!-- 加载中且无数据：显示全屏加载，避免表格空态闪烁 -->
-    <div v-if="loading && !unifiedList.length" class="list-loading">
-      <a-spin tip="加载中..." />
+    <!-- 覆盖层：初始加载时全屏 loading，或无数据时显示空态 -->
+    <div
+      v-if="(loading && !unifiedList.length) || (!loading && !unifiedList.length)"
+      class="list-overlay"
+    >
+      <div v-if="loading && !unifiedList.length" class="list-loading">
+        <a-spin tip="加载中..." />
+      </div>
+      <a-empty
+        v-else-if="searchQuery.trim()"
+        :description="`未找到「${searchQuery.trim()}」相关结果`"
+      />
+      <a-empty v-else description="暂无物料" />
     </div>
 
-    <!-- 文件夹与文件统一表格 -->
+    <!-- 文件夹与文件统一表格：始终渲染，避免 insertBefore 报错（Arco 内部 teleport/锚点依赖稳定节点） -->
     <a-table
-      v-else-if="loading || unifiedList.length"
       class="list-table"
-      :class="{ 'has-selection': hasSelection }"
+      :class="{ 'has-selection': hasSelection, 'is-covered': !unifiedList.length }"
       :columns="columns"
       :data="unifiedList"
-      :loading="loading"
+      :loading="false"
       :row-selection="rowSelection"
       :row-class-name="getRowClassName"
       v-model:selected-keys="selectedKeys"
@@ -376,21 +386,21 @@ function handleOpenNewWindow(record: Material) {
         <!-- 文件夹行 -->
         <span v-if="record.kind === 'folder'" class="cell-folder-name" @click="handleRowClick(record)">
           <IconFolder :size="16" class="name-icon" />
-          <a-tooltip :content="record.name" position="top" :mouse-enter-delay="400" :popup-container="listRef">
+          <a-tooltip :content="record.name" position="top" :mouse-enter-delay="400" :popup-container="popupContainer">
             <span>{{ record.name }}</span>
           </a-tooltip>
         </span>
         <!-- 文件行 -->
         <span v-else class="cell-name" @click="emit('select', record.material!)">
           <component :is="getExtIcon(record.material?.ext || '')" :width="16" :height="16" class="name-icon" />
-          <a-tooltip :content="record.material?.name" position="top" :mouse-enter-delay="400" :popup-container="listRef">
+          <a-tooltip :content="record.material?.name" position="top" :mouse-enter-delay="400" :popup-container="popupContainer">
             <span>{{ record.material?.name }}</span>
           </a-tooltip>
         </span>
       </template>
       <template #desc="{ record }">
         <template v-if="record.kind === 'file'">
-          <a-tooltip :content="record.material?.desc || ''" position="top" :mouse-enter-delay="400" :popup-container="listRef">
+          <a-tooltip :content="record.material?.desc || ''" position="top" :mouse-enter-delay="400" :popup-container="popupContainer">
             <span class="cell-desc">{{ record.material?.desc || '-' }}</span>
           </a-tooltip>
         </template>
@@ -457,15 +467,6 @@ function handleOpenNewWindow(record: Material) {
         </div>
       </template>
     </a-table>
-
-    <!-- 空态 -->
-    <div
-      v-else-if="!loading && !unifiedList.length"
-      class="list-empty"
-    >
-      <a-empty v-if="searchQuery.trim()" :description="`未找到「${searchQuery.trim()}」相关结果`" />
-      <a-empty v-else description="暂无物料" />
-    </div>
   </div>
 </template>
 
@@ -748,17 +749,28 @@ function handleOpenNewWindow(record: Material) {
   align-items: center;
 }
 
-.list-loading {
+.list-overlay {
+  position: absolute;
+  inset: 36px 0 0 0; /* 避开面包屑高度 */
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
+  background: var(--color-bg-2, #f7f8fa);
 }
-.list-empty {
+
+.list-overlay .list-loading {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+.list-table.is-covered {
+  /* 被覆盖层盖住时隐藏自身滚动条与空态，避免叠影 */
+  pointer-events: none;
+  opacity: 0.2;
 }
 </style>
 
