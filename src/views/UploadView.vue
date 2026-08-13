@@ -30,6 +30,8 @@ const uploading = ref(false);
 const dragOver = ref(false);
 let pendingCount = 0;
 let completedCount = 0;
+let successCount = 0;
+let errorCount = 0;
 
 const hasFiles = computed(() => fileList.value.length > 0);
 
@@ -185,7 +187,7 @@ async function handleUploadAll() {
   uploadRef.value.submit();
 }
 
-function handleError(fileItem: FileItem, error: unknown) {
+function handleError(fileItem: FileItem, _error?: unknown) {
   completedCount++;
   errorCount++;
   if (completedCount >= pendingCount) {
@@ -394,7 +396,7 @@ onBeforeUnmount(() => {
                   @error="handleError"
                 >
                   <template #upload-button>
-                    <a-button status="primary" variant="outline" class="btn-primary-outline">
+                  <a-button type="primary" variant="outline" class="btn-primary-outline">
                       <template #icon><IconFolderAdd /></template>
                       选择文件夹
                     </a-button>
@@ -519,7 +521,7 @@ onBeforeUnmount(() => {
       <!-- 操作按钮 -->
       <div v-if="hasFiles" class="upload-actions">
         <a-button
-          status="primary"
+          type="primary"
           variant="outline"
           class="btn-primary-outline"
           :loading="uploading"
