@@ -73,7 +73,11 @@ async function loadItem(id: string) {
 
 function goBack() {
   document.title = APP_TITLE;
-  router.replace('/')
+  if (window.history.length > 1) {
+    router.back();
+  } else {
+    router.replace('/');
+  }
 }
 
 onUnmounted(() => {

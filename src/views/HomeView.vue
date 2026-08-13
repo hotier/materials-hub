@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted, onActivated, computed, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { Modal } from '@arco-design/web-vue';
 import { IconPlus } from '@arco-design/web-vue/es/icon';
@@ -41,8 +41,8 @@ const showEdit = ref(false);
 const filteredItems = computed(() => {
   let list = items.value;
 
-  // 日期树筛选
-  if (activeDateKey.value !== 'all') {
+  // 日期树筛选（进入文件夹时跳过日期筛选，显示文件夹内所有日期的文件）
+  if (activeDateKey.value !== 'all' && !activeFolderKey.value) {
     const key = activeDateKey.value;
     list = list.filter((m) => {
       const date = m.createTime || m.uploadedAt;
@@ -94,24 +94,52 @@ const filteredItems = computed(() => {
   return list;
 });
 
+defineOptions({ name: 'HomeView' });
+
 // 路由守卫已处理鉴权重定向，此处直接加载数据
 onMounted(async () => {
   console.log('[HomeView] mounted, loading list...');
   await loadList();
 });
 
-// 监听路由变化，确保从其他页面返回时刷新列表
-watch(
-  () => route.path,
-  (to, from) => {
-    if (to === '/') {
-      console.log('[HomeView] route changed, reloading list...');
-      loadList();
-    }
-  },
-);
+// keep-alive 激活时静默刷新（从预览/上传页返回）
+onActivated(() => {
+  loadList();
+});
 
 // 方法
+function getLatestDateKey(list: Material[]): string {
+  if (!list.length) return 'all';
+  const dates = new Set<string>();
+  for (const m of list) {
+    const raw = m.createTime || m.uploadedAt;
+    if (!raw) continue;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) continue;
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    dates.add(k);
+  }
+  if (!dates.size) return 'all';
+  return [...dates].sort().pop()!;
+}
+
+function hasFilesForDate(list: Material[], key: string): boolean {
+  if (key === 'all') return true;
+  return list.some((m) => {
+    const raw = m.createTime || m.uploadedAt;
+    if (!raw) return false;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return false;
+    const y = String(d.getFullYear());
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const da = String(d.getDate()).padStart(2, '0');
+    const parts = key.split('-');
+    if (parts.length === 3) return y === parts[0] && mo === parts[1] && da === parts[2];
+    if (parts.length === 2) return y === parts[0] && mo === parts[1];
+    return y === key;
+  });
+}
+
 async function loadList() {
   loading.value = true;
   try {
@@ -119,6 +147,11 @@ async function loadList() {
     if (res?.success !== false) {
       items.value = (res.data || []) as Material[];
       cateMap.value = res.cateMap || {};
+      // 如果当前选中的日期没有文件，自动定位到最新有文件的日期
+      if (!hasFilesForDate(items.value, activeDateKey.value)) {
+        activeDateKey.value = getLatestDateKey(items.value);
+        activeFolderKey.value = '';
+      }
     }
   } catch (e: any) {
     console.error('[HomeView] loadList error:', e);
@@ -139,6 +172,19 @@ function handleSidebarSelect(key: string) {
 
 /** 文件夹下钻：进入某文件夹路径（由列表区点击触发） */
 function handleDrill(path: string) {
+  // 从「全部」点击文件夹时，自动定位到该文件夹内最新文件的日期
+  if (activeDateKey.value === 'all') {
+    const folderFiles = items.value.filter((m) => {
+      const rp = m.relativePath || '';
+      return rp === path || rp.startsWith(path + '/');
+    });
+    if (folderFiles.length) {
+      const latest = getLatestDateKey(folderFiles);
+      if (latest !== 'all') {
+        activeDateKey.value = latest;
+      }
+    }
+  }
   activeFolderKey.value = path;
 }
 
@@ -262,7 +308,7 @@ function handleFabClick() {
 }
 
 function initFabPos() {
-  fabPos.value = { x: window.innerWidth - 68, y: window.innerHeight - 100 };
+  fabPos.value = { x: window.innerWidth - 80, y: window.innerHeight - 80 };
 }
 
 onMounted(() => { initFabPos(); window.addEventListener('resize', initFabPos); });

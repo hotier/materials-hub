@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import {
   IconCaretRight,
   IconApps,
@@ -60,9 +60,12 @@ const timeGroups = computed<TimeYear[]>(() => {
     }));
 });
 
-/** 初始展开当前选中日期所在分支（仅初始化一次，交给用户自由折叠） */
+/** 当前年份 */
+const currentYear = String(new Date().getFullYear());
+
+/** 初始展开：当前年份始终展开 */
 function initOpenKeys(): string[] {
-  const keys = new Set<string>();
+  const keys = new Set<string>([currentYear]);
   const m = /^(\d{4})(?:-(\d{2}))?/.exec(props.selectedKey);
   if (m) {
     if (m[1]) keys.add(m[1]);
@@ -71,6 +74,28 @@ function initOpenKeys(): string[] {
   return [...keys];
 }
 const openKeys = ref<string[]>(initOpenKeys());
+
+/** 监听选中变化：选择年份时自动展开该年份，关闭其他年份 */
+watch(
+  () => props.selectedKey,
+  (key) => {
+    if (!key || key === 'all') return;
+    const yearMatch = /^(\d{4})/.exec(key);
+    if (!yearMatch) return;
+    const year = yearMatch[1];
+    const newKeys = new Set<string>(openKeys.value);
+    // 移除所有年份的展开状态（只保留当前年份）
+    const yearRegex = /^\d{4}$/;
+    for (const k of [...newKeys]) {
+      if (yearRegex.test(k)) {
+        newKeys.delete(k);
+      }
+    }
+    newKeys.add(year);
+    openKeys.value = [...newKeys];
+  },
+  { immediate: false }
+);
 
 function onSelect(key: string) {
   emit('select', key);

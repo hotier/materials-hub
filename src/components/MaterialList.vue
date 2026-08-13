@@ -37,6 +37,8 @@ interface FolderEntry {
   name: string;
   fullPath: string;
   count: number;
+  earliestDate?: number | string;
+  totalSize: number;
 }
 
 /** 统一行数据：文件夹或文件 */
@@ -46,6 +48,8 @@ interface UnifiedRow {
   name: string;
   fullPath: string;
   count?: number;
+  earliestDate?: number | string;
+  totalSize?: number;
   material?: Material;
 }
 
@@ -68,8 +72,21 @@ const folderList = computed<FolderEntry[]>(() => {
     const slash = rest.indexOf('/');
     const name = slash === -1 ? rest : rest.slice(0, slash);
     const fullPath = props.currentFolder ? `${props.currentFolder}/${name}` : name;
-    const entry = map.get(fullPath) ?? { name, fullPath, count: 0 };
+    const entry = map.get(fullPath) ?? { name, fullPath, count: 0, earliestDate: undefined, totalSize: 0 };
     entry.count += 1;
+    // 累加文件大小
+    entry.totalSize += m.size || 0;
+    // 收集文件夹内最早文件日期
+    const fileDate = m.createTime || m.uploadedAt;
+    if (fileDate) {
+      const curr = new Date(fileDate).getTime();
+      if (!isNaN(curr)) {
+        const prev = entry.earliestDate ? new Date(entry.earliestDate).getTime() : Infinity;
+        if (curr < prev) {
+          entry.earliestDate = fileDate;
+        }
+      }
+    }
     map.set(fullPath, entry);
   }
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh'));
@@ -93,6 +110,8 @@ const unifiedList = computed<UnifiedRow[]>(() => {
     name: f.name,
     fullPath: f.fullPath,
     count: f.count,
+    earliestDate: f.earliestDate,
+    totalSize: f.totalSize,
   }));
   const fileRows: UnifiedRow[] = fileList.value.map((m) => ({
     kind: 'file',
@@ -328,9 +347,14 @@ function handleOpenNewWindow(record: Material) {
       >
     </a-breadcrumb>
 
+    <!-- 加载中且无数据：显示全屏加载，避免表格空态闪烁 -->
+    <div v-if="loading && !unifiedList.length" class="list-loading">
+      <a-spin tip="加载中..." />
+    </div>
+
     <!-- 文件夹与文件统一表格 -->
     <a-table
-      v-if="loading || unifiedList.length"
+      v-else-if="loading || unifiedList.length"
       class="list-table"
       :class="{ 'has-selection': hasSelection }"
       :columns="columns"
@@ -351,20 +375,22 @@ function handleOpenNewWindow(record: Material) {
       <template #name="{ record }">
         <!-- 文件夹行 -->
         <span v-if="record.kind === 'folder'" class="cell-folder-name" @click="handleRowClick(record)">
-          <a-tooltip :content="record.name" position="top" :mouse-enter-delay="400">
+          <IconFolder :size="16" class="name-icon" />
+          <a-tooltip :content="record.name" position="top" :mouse-enter-delay="400" :popup-container="listRef">
             <span>{{ record.name }}</span>
           </a-tooltip>
         </span>
         <!-- 文件行 -->
         <span v-else class="cell-name" @click="emit('select', record.material!)">
-          <a-tooltip :content="record.material?.name" position="top" :mouse-enter-delay="400">
+          <component :is="getExtIcon(record.material?.ext || '')" :width="16" :height="16" class="name-icon" />
+          <a-tooltip :content="record.material?.name" position="top" :mouse-enter-delay="400" :popup-container="listRef">
             <span>{{ record.material?.name }}</span>
           </a-tooltip>
         </span>
       </template>
       <template #desc="{ record }">
         <template v-if="record.kind === 'file'">
-          <a-tooltip :content="record.material?.desc || ''" position="top" :mouse-enter-delay="400">
+          <a-tooltip :content="record.material?.desc || ''" position="top" :mouse-enter-delay="400" :popup-container="listRef">
             <span class="cell-desc">{{ record.material?.desc || '-' }}</span>
           </a-tooltip>
         </template>
@@ -397,11 +423,11 @@ function handleOpenNewWindow(record: Material) {
       </template>
       <template #date="{ record }">
         <span v-if="record.kind === 'file'" class="cell-date">{{ formatDate(record.material?.createTime) }}</span>
-        <span v-else class="cell-muted">-</span>
+        <span v-else class="cell-date">{{ formatDate(record.earliestDate) }}</span>
       </template>
       <template #size="{ record }">
         <span v-if="record.kind === 'file'" class="cell-size">{{ formatSize(record.material?.size) }}</span>
-        <span v-else class="cell-muted">-</span>
+        <span v-else class="cell-size">{{ formatSize(record.totalSize) }}</span>
       </template>
       <template #actions="{ record }">
         <div v-if="record.kind === 'file'" class="cell-actions" @click.stop>
@@ -434,7 +460,7 @@ function handleOpenNewWindow(record: Material) {
 
     <!-- 空态 -->
     <div
-      v-if="!loading && !unifiedList.length"
+      v-else-if="!loading && !unifiedList.length"
       class="list-empty"
     >
       <a-empty v-if="searchQuery.trim()" :description="`未找到「${searchQuery.trim()}」相关结果`" />
@@ -514,15 +540,20 @@ function handleOpenNewWindow(record: Material) {
 
 /* ======== 文件夹行样式 ======== */
 .cell-folder-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--color-text-primary);
   font-weight: var(--font-weight-medium);
   font-size: var(--font-size-base);
   max-width: 100%;
   overflow: hidden;
+  cursor: pointer;
+}
+.cell-folder-name :deep(span) {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: middle;
-  cursor: pointer;
 }
 .folder-type-tag {
   background: var(--color-primary-light-1);
@@ -613,17 +644,25 @@ function handleOpenNewWindow(record: Material) {
 }
 
 /* ======== 单元格样式 ======== */
+.name-icon {
+  flex-shrink: 0;
+  display: block;
+}
 .cell-name {
   font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
   font-size: var(--font-size-base);
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   max-width: 100%;
+  overflow: hidden;
+  cursor: pointer;
+}
+.cell-name :deep(span) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: middle;
-  cursor: pointer;
 }
 .cell-desc {
   color: var(--color-text-secondary);
@@ -709,6 +748,12 @@ function handleOpenNewWindow(record: Material) {
   align-items: center;
 }
 
+.list-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
 .list-empty {
   display: flex;
   align-items: center;

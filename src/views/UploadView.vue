@@ -11,6 +11,7 @@ import {
 import { Message } from '@arco-design/web-vue';
 import { useApi } from '@/composables/useApi';
 import { getExtIcon } from '@/utils/fileType';
+import { compressMedia } from '@/composables/useMediaCompress';
 import type { FileItem, RequestOption } from '@arco-design/web-vue/es/upload/interfaces';
 import type { TreeNodeData } from '@arco-design/web-vue/es/tree/interface';
 
@@ -150,26 +151,45 @@ function getDisplayName(item: FileItem): string {
 
 function customRequest(options: RequestOption) {
   const { fileItem, onError, onSuccess } = options;
-  const formData = new FormData();
-  formData.append('file', fileItem.file as File, fileItem.name);
-  const displayName = getDisplayName(fileItem);
-  const basename = (displayName || '').replace(/\.[^.]+$/, '').split('/').pop() || '';
-  formData.append('name', basename);
-  formData.append('desc', '');
-  formData.append('tags', '');
-  const rawPath = (fileItem as any).__relativePath ||
-    fileRelativePaths.value[fileItem.uid] ||
-    (fileItem.file as any)?.webkitRelativePath || '';
-  const relativePath = rawPath.split('/').slice(0, -1).join('/');
-  formData.append('relativePath', relativePath);
 
-  api.upload(formData)
-    .then((res) => {
+  (async () => {
+    // 压缩媒体文件
+    let file = fileItem.file as File;
+    let fileName = fileItem.name;
+    try {
+      const result = await compressMedia(file);
+      if (result.compressed) {
+        file = result.file;
+        fileName = result.file.name;
+        console.info(
+          `[compress] ${fileItem.name}: ${formatSize(result.originalSize)} -> ${formatSize(result.compressedSize)}`,
+        );
+      }
+    } catch (e) {
+      console.warn('[compress] failed, using original:', e);
+    }
+
+    const formData = new FormData();
+    formData.append('file', file, fileName);
+    const displayName = getDisplayName(fileItem);
+    const basename = (displayName || '').replace(/\.[^.]+$/, '').split('/').pop() || '';
+    formData.append('name', basename);
+    formData.append('desc', '');
+    formData.append('tags', '');
+    const rawPath = (fileItem as any).__relativePath ||
+      fileRelativePaths.value[fileItem.uid] ||
+      (fileItem.file as any)?.webkitRelativePath || '';
+    const relativePath = rawPath.split('/').slice(0, -1).join('/');
+    formData.append('relativePath', relativePath);
+
+    try {
+      const res = await api.upload(formData);
       onSuccess(res);
-    })
-    .catch((err) => {
+    } catch (err) {
       onError(err);
-    });
+    }
+  })();
+
   return {
     abort() {},
   };

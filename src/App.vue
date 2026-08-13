@@ -7,7 +7,9 @@ function getTransitionName(value: unknown): string {
 <template>
   <RouterView v-slot="{ Component, route }">
     <transition :name="getTransitionName(route.meta.transition)">
-      <component :is="Component" :key="route.path" />
+      <keep-alive include="HomeView">
+        <component :is="Component" :key="route.path" />
+      </keep-alive>
     </transition>
   </RouterView>
 </template>

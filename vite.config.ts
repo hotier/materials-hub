@@ -27,7 +27,7 @@ export default defineConfig({
         ArcoResolver({ sideEffect: true }),
         IconsResolver({
           prefix: 'i',
-          enabledCollections: ['mdi', 'tabler', 'proicons', 'prime', 'hugeicons', 'solar', 'material-symbols', 'mingcute', 'ph'],
+          enabledCollections: ['mdi', 'tabler', 'proicons', 'prime', 'hugeicons', 'solar', 'material-symbols', 'mingcute', 'ph', 'fa6-regular'],
         }),
       ],
       dts: 'src/components.d.ts',
@@ -37,6 +37,9 @@ export default defineConfig({
     alias: {
       '@': '/src',
     },
+  },
+  optimizeDeps: {
+    include: ['lamejs'],
   },
   server: {
     port: 5173,
