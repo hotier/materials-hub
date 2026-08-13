@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { IconArrowLeft, IconDownload, IconFile } from '@arco-design/web-vue/es/icon';
 import { useApi } from '@/composables/useApi';
@@ -22,6 +22,8 @@ const { getCategory } = usePreview();
 
 const item = ref<Material | null>(null);
 const loading = ref(true);
+const isAuthenticated = ref(false);
+const errorMsg = ref('');
 
 const APP_TITLE = 'Materials Hub';
 
@@ -43,29 +45,60 @@ const showModeToggle = computed(() => cat.value === 'md' || cat.value === 'html'
 
 const isDownloadable = computed(() => !!fileUrl.value);
 
+/** 清理所有残留的 Arco popup DOM */
+function clearAllArcoPopups() {
+  document
+    .querySelectorAll('.arco-tooltip-popup, .arco-trigger-popup, .arco-dropdown-popup, .arco-popover-popup, .arco-select-popup')
+    .forEach((el) => {
+      // 只移除确实包含 popup 内容的元素，避免误删其他 trigger
+      if (
+        el.querySelector('.arco-tooltip-content') ||
+        el.querySelector('.arco-dropdown-menu') ||
+        el.querySelector('.arco-popover-content') ||
+        el.classList.contains('arco-tooltip-popup')
+      ) {
+        el.remove();
+      }
+    });
+}
+
 onMounted(async () => {
+  // 解除 popup 隐藏 + 清理残留 popup（双重保障）
+  document.body.classList.remove('arco-popup-hidden');
+  clearAllArcoPopups();
+  nextTick(clearAllArcoPopups);
+  setTimeout(clearAllArcoPopups, 50);
+  setTimeout(clearAllArcoPopups, 200);
+  setTimeout(clearAllArcoPopups, 500);
+
   const id = route.query.id as string;
   if (!id) {
     router.replace('/');
     return;
+  }
+  // 检查认证状态（用于下载功能）
+  try {
+    const auth = await api.authStatus();
+    isAuthenticated.value = auth.authenticated;
+  } catch {
+    isAuthenticated.value = false;
   }
   await loadItem(id);
 });
 
 async function loadItem(id: string) {
   loading.value = true;
+  errorMsg.value = '';
   try {
-    const res = await api.getById(id);
-    if (res.success) {
-      item.value = res.data as Material;
+    const res = await api.getPreviewInfo(id);
+    if (res.success && res.data) {
+      item.value = res.data;
       document.title = stripExt(item.value.name || '文件预览');
     } else {
-      toast('文件不存在', 'error');
-      router.replace('/');
+      errorMsg.value = res.message || '文件不存在或已被删除';
     }
   } catch {
-    toast('加载失败', 'error');
-    router.replace('/');
+    errorMsg.value = '加载失败，请稍后重试';
   } finally {
     loading.value = false;
   }
@@ -85,12 +118,18 @@ onUnmounted(() => {
 });
 
 function download() {
-  if (!fileUrl.value || !item.value) return;
-  const name = item.value.ext ? `${item.value.name}.${item.value.ext}` : item.value.name;
+  if (!item.value) return;
+  if (!isAuthenticated.value) {
+    toast('请先登录后下载', 'warning');
+    router.push('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));
+    return;
+  }
   const a = document.createElement('a');
-  a.href = fileUrl.value;
-  a.download = name;
+  a.href = `/api/download?id=${encodeURIComponent(item.value.id)}`;
+  a.download = '';
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
 }
 
 </script>
@@ -124,10 +163,11 @@ function download() {
           v-if="isDownloadable"
           type="outline"
           size="small"
+          :status="!isAuthenticated ? 'warning' : undefined"
           @click="download"
         >
           <template #icon><IconDownload /></template>
-          下载
+          {{ isAuthenticated ? '下载' : '登录后下载' }}
         </a-button>
       </div>
     </header>
@@ -135,6 +175,13 @@ function download() {
     <!-- 内容区 -->
     <main class="preview-body">
       <a-spin v-if="loading" class="preview-loading" :loading="true" tip="加载中..." />
+
+      <div v-else-if="errorMsg" class="preview-error">
+        <div class="error-icon"><IconFile :size="64" /></div>
+        <h2>无法预览</h2>
+        <p>{{ errorMsg }}</p>
+        <a-button type="primary" @click="goBack">返回列表</a-button>
+      </div>
 
       <template v-else-if="item">
         <!-- Markdown -->
@@ -158,7 +205,7 @@ function download() {
             @click="download"
           >
             <template #icon><IconDownload /></template>
-            下载文件
+            {{ isAuthenticated ? '下载文件' : '登录后下载' }}
           </a-button>
         </div>
       </template>
@@ -253,6 +300,31 @@ function download() {
   margin: 0;
 }
 .preview-unknown p {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.preview-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--gap-md);
+  text-align: center;
+  padding: var(--gap-2xl);
+}
+.preview-error .error-icon {
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+}
+.preview-error h2 {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.preview-error p {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   margin: 0;

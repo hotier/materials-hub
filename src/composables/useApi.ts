@@ -74,6 +74,16 @@ export function useApi() {
     return request<MaterialListResponse>('/list');
   }
 
+  // ===== 预览页获取单个产出元数据（公开，无需认证） =====
+  async function getPreviewInfo(id: string): Promise<{ success: boolean; data?: Material; message?: string }> {
+    const res = await fetch(`${BASE}/preview?id=${encodeURIComponent(id)}&info=1`);
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, message: data.message || `HTTP ${res.status}` };
+    }
+    return data;
+  }
+
   // ===== 预览页获取单个产出 =====
   async function getById(id: string): Promise<{ success: boolean; data: Material }> {
     return request(`${'/item?id='}${encodeURIComponent(id)}`);
@@ -155,7 +165,7 @@ export function useApi() {
   }
 
   return {
-    list, upload, remove, update, getById,
+    list, upload, remove, update, getById, getPreviewInfo,
     authStatus, clearAuth, login, logout,
     previewUrl, rawUrl, getPreviewPageUrl,
   };

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { Message } from '@arco-design/web-vue';
 import {
   IconEdit,
@@ -11,7 +12,7 @@ import {
 } from '@arco-design/web-vue/es/icon';
 import type { Material } from '@/types';
 import type { TableColumnData } from '@arco-design/web-vue';
-import { getExtIcon, getExtColor } from '@/utils/fileType';
+import { getExtIcon, getExtColor, FOLDER_COLOR } from '@/utils/fileType';
 
 const props = defineProps<{
   items: Material[];
@@ -31,6 +32,13 @@ const emit = defineEmits<{
   crumb: [path: string];
   'navigate-date': [key: string];
 }>();
+
+const route = useRoute();
+
+// 监听路由变化，清理残留的 tooltip
+watch(() => route.fullPath, () => {
+  clearAllPopups();
+});
 
 /* ======== 文件夹下钻 ======== */
 interface FolderEntry {
@@ -102,8 +110,41 @@ const fileList = computed<Material[]>(() => {
   });
 });
 
-/** 统一列表：文件夹与文件混排，按名称排序 */
+/** 筛选时使用：当前作用域内的所有文件（包括子文件夹内的） */
+const allFilesInScope = computed<Material[]>(() => {
+  return props.items.filter((m) => inScope(m.relativePath || ''));
+});
+
+/* ======== 排序和筛选状态 ======== */
+type SortDirection = 'ascend' | 'descend' | '';
+const sortField = ref<string>('date');
+const sortDirection = ref<SortDirection>('descend');
+const filterState = ref<Record<string, string[]>>({});
+
+/** 判断是否有激活的筛选条件 */
+const hasActiveFilter = computed(() => {
+  return Object.values(filterState.value).some((v) => v && v.length > 0);
+});
+
+/** 统一列表：文件夹与文件混排，默认按日期从近到远排序
+ *  当有筛选条件时，显示所有匹配的文件（包括子文件夹内的），不显示文件夹行 */
 const unifiedList = computed<UnifiedRow[]>(() => {
+  if (hasActiveFilter.value) {
+    // 筛选模式：显示所有匹配的文件（包括子文件夹内的）
+    return allFilesInScope.value.map((m) => ({
+      kind: 'file' as const,
+      key: `file:${m.id}`,
+      name: m.name,
+      fullPath: m.relativePath || '',
+      material: m,
+    })).sort((a, b) => {
+      const aDate = a.material?.createTime || 0;
+      const bDate = b.material?.createTime || 0;
+      return new Date(bDate).getTime() - new Date(aDate).getTime();
+    });
+  }
+
+  // 默认模式：显示当前层级的文件夹 + 文件
   const folderRows: UnifiedRow[] = folderList.value.map((f) => ({
     kind: 'folder',
     key: `folder:${f.fullPath}`,
@@ -120,7 +161,11 @@ const unifiedList = computed<UnifiedRow[]>(() => {
     fullPath: m.relativePath || '',
     material: m,
   }));
-  return [...folderRows, ...fileRows].sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  return [...folderRows, ...fileRows].sort((a, b) => {
+    const aDate = a.material?.createTime || a.earliestDate || 0;
+    const bDate = b.material?.createTime || b.earliestDate || 0;
+    return new Date(bDate).getTime() - new Date(aDate).getTime();
+  });
 });
 
 /** 面包屑：年 - 月 - 日 - 文件夹 - 子文件夹 ... 完整层级路径 */
@@ -159,13 +204,32 @@ function handleCrumb(path: string) {
   emit('crumb', path);
 }
 
-/** 行点击：文件夹下钻，文件打开 */
+/** 清理所有残留的 Arco popup DOM */
+function clearAllPopups() {
+  document
+    .querySelectorAll('.arco-tooltip-popup, .arco-trigger-popup, .arco-dropdown-popup, .arco-popover-popup, .arco-select-popup')
+    .forEach((el) => {
+      if (
+        el.querySelector('.arco-tooltip-content') ||
+        el.querySelector('.arco-dropdown-menu') ||
+        el.querySelector('.arco-popover-content') ||
+        el.classList.contains('arco-tooltip-popup')
+      ) {
+        el.remove();
+      }
+    });
+}
+
+/** 行点击：文件夹下钻 */
 function handleRowClick(row: UnifiedRow) {
-  if (row.kind === 'folder') {
-    emit('drill', row.fullPath);
-  } else if (row.material) {
-    emit('select', row.material);
-  }
+  clearAllPopups();
+  emit('drill', row.fullPath);
+}
+
+/** 文件行点击：先清理 popup 再导航 */
+function handleFileClick(material: Material) {
+  clearAllPopups();
+  emit('select', material);
 }
 
 /** 给文件夹行添加特殊 class */
@@ -175,7 +239,7 @@ function getRowClassName(row: UnifiedRow): string {
 
 /** 表格容器高度，用于计算 scroll.y */
 const listRef = ref<HTMLElement | null>(null);
-const popupContainer = computed(() => listRef.value ?? undefined);
+const popupContainer = document.body;
 const tableScrollY = ref(300);
 
 function calcScrollY() {
@@ -198,12 +262,42 @@ onMounted(() => {
 
 onUnmounted(() => {
   resizeObserver?.disconnect();
+  clearAllPopups();
 });
-
-watch(unifiedList, () => nextTick(() => calcScrollY()));
 
 /* ======== 行选择 ======== */
 const selectedKeys = ref<string[]>([]);
+
+/** 空态描述（用于表格空态） */
+const emptyDescription = computed(() => {
+  if (props.searchQuery.trim()) {
+    return `未找到「${props.searchQuery.trim()}」相关结果`;
+  }
+  if (hasActiveFilter.value) {
+    return '没有符合筛选条件的物料';
+  }
+  return '暂无物料';
+});
+
+/** 类型筛选选项（仅当前作用域内的文件） */
+const extFilterOptions = computed(() => {
+  const exts = new Set<string>();
+  for (const m of props.items) {
+    if (inScope(m.relativePath || '') && m.ext) exts.add(m.ext.toUpperCase());
+  }
+  return Array.from(exts).sort().map((ext) => ({ text: ext, value: ext }));
+});
+
+/** 标签筛选选项（仅当前作用域内的文件） */
+const tagFilterOptions = computed(() => {
+  const tags = new Set<string>();
+  for (const m of props.items) {
+    if (inScope(m.relativePath || '') && m.tags) {
+      for (const t of m.tags) tags.add(t);
+    }
+  }
+  return Array.from(tags).sort().map((tag) => ({ text: tag, value: tag }));
+});
 
 /** 判断行是否为文件（可选中） */
 function isFileRow(row: UnifiedRow): boolean {
@@ -221,7 +315,7 @@ const rowSelection = computed(() => ({
 const hasSelection = computed(() => selectedItems.value.length > 0);
 
 const selectedItems = computed(() =>
-  fileList.value.filter((m) => selectedKeys.value.includes(`file:${m.id}`)),
+  allFilesInScope.value.filter((m) => selectedKeys.value.includes(`file:${m.id}`)),
 );
 
 // 切换文件夹 / 筛选条件时清空选择，避免出现不可见项的脏选中
@@ -241,7 +335,7 @@ function handleBatchDelete() {
 }
 
 /* ======== 列定义 ======== */
-const columns: TableColumnData[] = [
+const columns = computed<TableColumnData[]>(() => [
   {
     title: '名称',
     dataIndex: 'name',
@@ -255,29 +349,68 @@ const columns: TableColumnData[] = [
     dataIndex: 'desc',
     ellipsis: true,
     tooltip: true,
-    width: 180,
+    width: 220,
     slotName: 'desc',
   },
   {
     title: '标签',
-    width: 200,
+    width: 240,
     slotName: 'tags',
+    filterable: {
+      filters: tagFilterOptions.value,
+      filter: (filteredValue: string[], record: UnifiedRow) => {
+        if (!filteredValue || filteredValue.length === 0) return true;
+        if (record.kind !== 'file') return false;
+        if (!record.material?.tags || record.material.tags.length === 0) return false;
+        return filteredValue.some((v) => record.material!.tags!.includes(v));
+      },
+      multiple: true,
+    },
   },
   {
     title: '类型',
     dataIndex: 'ext',
-    width: 110,
+    width: 80,
     slotName: 'ext',
+    filterable: {
+      filters: extFilterOptions.value,
+      filter: (filteredValue: string[], record: UnifiedRow) => {
+        if (!filteredValue || filteredValue.length === 0) return true;
+        if (record.kind === 'folder') return false;
+        const ext = (record.material?.ext || '').toUpperCase();
+        return filteredValue.includes(ext);
+      },
+      multiple: true,
+    },
   },
   {
     title: '日期',
+    dataIndex: 'date',
     width: 130,
     slotName: 'date',
+    sortable: {
+      sortDirections: ['ascend', 'descend'],
+      defaultSortOrder: 'descend',
+      sorter: (a: UnifiedRow, b: UnifiedRow) => {
+        const aDate = a.material?.createTime || a.earliestDate || 0;
+        const bDate = b.material?.createTime || b.earliestDate || 0;
+        return new Date(aDate).getTime() - new Date(bDate).getTime();
+      },
+    },
   },
   {
     title: '大小',
+    dataIndex: 'size',
     width: 90,
     slotName: 'size',
+    sortable: {
+      sortDirections: ['ascend', 'descend'],
+      sorter: (a: UnifiedRow, b: UnifiedRow) => {
+        const aSize = a.material?.size || a.totalSize || 0;
+        const bSize = b.material?.size || b.totalSize || 0;
+        return aSize - bSize;
+      },
+    },
   },
   {
     title: '操作',
@@ -285,7 +418,7 @@ const columns: TableColumnData[] = [
     fixed: 'right',
     slotName: 'actions',
   },
-];
+]);
 
 /* ======== 事件 ======== */
 function formatDate(ts?: number | string): string {
@@ -321,6 +454,35 @@ function handleOpenNewWindow(record: Material) {
   const url = `${window.location.origin}/preview?id=${record.id}`;
   window.open(url, '_blank');
 }
+
+/** 排序变化处理 */
+function handleSortChange(field: string, direction: string) {
+  sortField.value = field;
+  sortDirection.value = direction as SortDirection;
+}
+
+/** 获取相对路径（用于筛选模式下显示文件所在子文件夹） */
+function getRelativePath(fullPath: string): string {
+  if (!props.currentFolder) {
+    // 根目录下，显示父文件夹
+    const parts = fullPath.split('/');
+    return parts.length > 1 ? ` (${parts.slice(0, -1).join('/')})` : '';
+  }
+  // 当前文件夹下，显示子文件夹
+  const rest = fullPath.slice(props.currentFolder.length + 1);
+  const parts = rest.split('/');
+  return parts.length > 1 ? ` (${parts.slice(0, -1).join('/')})` : '';
+}
+
+/** 筛选变化处理 */
+function handleFilterChange(field: string, values: string[]) {
+  if (values.length === 0) {
+    delete filterState.value[field];
+  } else {
+    filterState.value[field] = values;
+  }
+  filterState.value = { ...filterState.value };
+}
 </script>
 
 <template>
@@ -348,25 +510,20 @@ function handleOpenNewWindow(record: Material) {
       >
     </a-breadcrumb>
 
-    <!-- 覆盖层：初始加载时全屏 loading，或无数据时显示空态 -->
+    <!-- 覆盖层：初始加载时全屏 loading -->
     <div
-      v-if="(loading && !unifiedList.length) || (!loading && !unifiedList.length)"
+      v-if="loading && !unifiedList.length"
       class="list-overlay"
     >
-      <div v-if="loading && !unifiedList.length" class="list-loading">
+      <div class="list-loading">
         <a-spin tip="加载中..." />
       </div>
-      <a-empty
-        v-else-if="searchQuery.trim()"
-        :description="`未找到「${searchQuery.trim()}」相关结果`"
-      />
-      <a-empty v-else description="暂无物料" />
     </div>
 
     <!-- 文件夹与文件统一表格：始终渲染，避免 insertBefore 报错（Arco 内部 teleport/锚点依赖稳定节点） -->
     <a-table
       class="list-table"
-      :class="{ 'has-selection': hasSelection, 'is-covered': !unifiedList.length }"
+      :class="{ 'has-selection': hasSelection }"
       :columns="columns"
       :data="unifiedList"
       :loading="false"
@@ -375,32 +532,36 @@ function handleOpenNewWindow(record: Material) {
       v-model:selected-keys="selectedKeys"
       :pagination="false"
       :bordered="{ wrapper: true, cell: false }"
-      :stripe="true"
-      :column-resizable="true"
       row-key="key"
       :hoverable="true"
       size="medium"
       :scroll="{ x: 1100, y: tableScrollY }"
+      @sorter-change="(field, direction) => handleSortChange(field as string, direction)"
+      @filter-change="(field, values) => handleFilterChange(field as string, values as string[])"
     >
       <template #name="{ record }">
         <!-- 文件夹行 -->
         <span v-if="record.kind === 'folder'" class="cell-folder-name" @click="handleRowClick(record)">
           <IconFolder :size="16" class="name-icon" />
-          <a-tooltip :content="record.name" position="top" :mouse-enter-delay="400" :popup-container="popupContainer">
+          <a-tooltip :content="record.name" position="top" :mouse-enter-delay="400" :popup-container="popupContainer" :arrow="true">
             <span>{{ record.name }}</span>
           </a-tooltip>
         </span>
         <!-- 文件行 -->
-        <span v-else class="cell-name" @click="emit('select', record.material!)">
+        <span v-else class="cell-name" @click="handleFileClick(record.material!)">
           <component :is="getExtIcon(record.material?.ext || '')" :width="16" :height="16" class="name-icon" />
-          <a-tooltip :content="record.material?.name" position="top" :mouse-enter-delay="400" :popup-container="popupContainer">
+          <a-tooltip :content="record.material?.name" position="top" :mouse-enter-delay="400" :popup-container="popupContainer" :arrow="true">
             <span>{{ record.material?.name }}</span>
           </a-tooltip>
+          <span v-if="hasActiveFilter && record.fullPath" class="cell-path-hint">
+            <!-- 筛选模式下显示子文件夹路径 -->
+            {{ getRelativePath(record.fullPath) }}
+          </span>
         </span>
       </template>
       <template #desc="{ record }">
         <template v-if="record.kind === 'file'">
-          <a-tooltip :content="record.material?.desc || ''" position="top" :mouse-enter-delay="400" :popup-container="popupContainer">
+          <a-tooltip :content="record.material?.desc || ''" position="top" :mouse-enter-delay="400" :popup-container="popupContainer" :arrow="true">
             <span class="cell-desc">{{ record.material?.desc || '-' }}</span>
           </a-tooltip>
         </template>
@@ -426,7 +587,7 @@ function handleOpenNewWindow(record: Material) {
           </a-tag>
           <span v-else class="cell-muted">-</span>
         </template>
-        <a-tag v-else class="folder-type-tag">
+        <a-tag v-else size="small" :color="FOLDER_COLOR">
             <template #icon><IconFolder :size="14" /></template>
             文件夹
           </a-tag>
@@ -464,6 +625,11 @@ function handleOpenNewWindow(record: Material) {
               </a-doption>
             </template>
           </a-dropdown>
+        </div>
+      </template>
+      <template #empty>
+        <div :style="{ minHeight: tableScrollY - 48 + 'px', display: 'flex', alignItems: 'center', justifyContent: 'center' }">
+          <a-empty :description="emptyDescription" />
         </div>
       </template>
     </a-table>
@@ -555,11 +721,6 @@ function handleOpenNewWindow(record: Material) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.folder-type-tag {
-  background: var(--color-primary-light-1);
-  border: none;
-  color: var(--color-primary);
 }
 
 /* ======== 表格 ======== */
@@ -665,6 +826,13 @@ function handleOpenNewWindow(record: Material) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cell-path-hint {
+  color: var(--color-text-4);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  margin-left: 8px;
+  flex-shrink: 0;
+}
 .cell-desc {
   color: var(--color-text-secondary);
   font-size: var(--font-size-base);
@@ -765,12 +933,6 @@ function handleOpenNewWindow(record: Material) {
   justify-content: center;
   width: 100%;
   height: 100%;
-}
-
-.list-table.is-covered {
-  /* 被覆盖层盖住时隐藏自身滚动条与空态，避免叠影 */
-  pointer-events: none;
-  opacity: 0.2;
 }
 </style>
 

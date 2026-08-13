@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, onActivated, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted, onActivated, computed, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { Modal } from '@arco-design/web-vue';
 import { IconPlus } from '@arco-design/web-vue/es/icon';
@@ -119,7 +119,26 @@ onMounted(async () => {
 // keep-alive 激活时静默刷新（从预览/上传页返回）
 onActivated(() => {
   loadList();
+  // 解除 popup 隐藏 + 清理残留
+  document.body.classList.remove('arco-popup-hidden');
+  nextTick(clearAllArcoPopups);
 });
+
+/** 清理所有残留的 Arco popup DOM */
+function clearAllArcoPopups() {
+  document
+    .querySelectorAll('.arco-tooltip-popup, .arco-trigger-popup, .arco-dropdown-popup, .arco-popover-popup, .arco-select-popup')
+    .forEach((el) => {
+      if (
+        el.querySelector('.arco-tooltip-content') ||
+        el.querySelector('.arco-dropdown-menu') ||
+        el.querySelector('.arco-popover-content') ||
+        el.classList.contains('arco-tooltip-popup')
+      ) {
+        el.remove();
+      }
+    });
+}
 
 // 方法
 function getLatestDateKey(list: Material[]): string {
@@ -218,7 +237,9 @@ function handleNavigateDate(key: string) {
 }
 
 function handleSelectItem(item: Material) {
-  router.push({ path: '/preview', query: { id: item.id } });
+  // 先清理 popup，防止 tooltip 残留到预览页
+  clearAllArcoPopups();
+  nextTick(() => router.push({ path: '/preview', query: { id: item.id } }));
 }
 
 function handleEdit(item: Material) {

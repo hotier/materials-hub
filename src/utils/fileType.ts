@@ -21,12 +21,19 @@ import {
   IconFileTypeXml,
   IconFileTypeCss,
   IconFileTypeZip,
+  IconFileTypeTxt,
   IconFileMusic,
   IconMovie,
-  IconArchive,
+  IconFavicon,
   IconMarkdown,
   IconPhoto,
   IconCode,
+  IconBrandPython,
+  IconJson,
+  IconBrandPowershell,
+  IconBrandGoogleBigQuery,
+  IconCodeDots,
+  IconGif,
 } from '@tabler/icons-vue';
 
 export type FileTypeIconComponent = typeof IconFile;
@@ -43,11 +50,11 @@ const extIconMap: Record<string, FileTypeIconComponent> = {
   jpg: IconFileTypeJpg,
   jpeg: IconFileTypeJpg,
   png: IconFileTypePng,
-  gif: IconPhoto,
+  gif: IconGif,
   bmp: IconFileTypeBmp,
   svg: IconFileTypeSvg,
   webp: IconPhoto,
-  ico: IconPhoto,
+  ico: IconFavicon,
   mp3: IconFileMusic,
   wav: IconFileMusic,
   ogg: IconFileMusic,
@@ -63,10 +70,10 @@ const extIconMap: Record<string, FileTypeIconComponent> = {
   flv: IconMovie,
   webm: IconMovie,
   zip: IconFileTypeZip,
-  rar: IconArchive,
-  '7z': IconArchive,
-  tar: IconArchive,
-  gz: IconArchive,
+  rar: IconFileTypeZip,
+  '7z': IconFileTypeZip,
+  tar: IconFileTypeZip,
+  gz: IconFileTypeZip,
   md: IconMarkdown,
   mdx: IconMarkdown,
   js: IconFileTypeJs,
@@ -74,20 +81,23 @@ const extIconMap: Record<string, FileTypeIconComponent> = {
   vue: IconFileTypeVue,
   jsx: IconFileTypeJsx,
   tsx: IconFileTypeTsx,
-  py: IconCode,
+  py: IconBrandPython,
   java: IconCode,
   c: IconCode,
   cpp: IconCode,
   css: IconFileTypeCss,
   scss: IconFileTypeCss,
   less: IconFileTypeCss,
-  json: IconCode,
+  json: IconJson,
   html: IconFileTypeHtml,
   xml: IconFileTypeXml,
-  yaml: IconCode,
-  yml: IconCode,
-  sh: IconCode,
-  bash: IconCode,
+  yaml: IconCodeDots,
+  yml: IconCodeDots,
+  sh: IconBrandPowershell,
+  bash: IconBrandPowershell,
+  txt: IconFileTypeTxt,
+  log: IconBrandGoogleBigQuery,
+  rtf: IconFileTypeTxt,
 };
 
 export function getExtIcon(ext: string): FileTypeIconComponent {
@@ -107,5 +117,8 @@ export function getExtColor(ext: string): string {
   if (['md', 'mdx'].includes(e)) return '#E8F3FF';
   if (['html', 'xml'].includes(e)) return '#FFF3E8';
   if (['js', 'ts', 'vue', 'jsx', 'tsx', 'py', 'java', 'c', 'cpp', 'css', 'scss', 'less', 'json', 'yaml', 'yml', 'sh', 'bash'].includes(e)) return '#E6FFFB';
+  if (['txt', 'log', 'rtf'].includes(e)) return '#E8F3FF';
   return '#E8F3FF';
 }
+
+export const FOLDER_COLOR = '#E8F3FF';
