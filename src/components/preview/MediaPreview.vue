@@ -1,43 +1,35 @@
 <template>
   <div class="preview-wrap preview-wrap--fill">
-    <!-- 非 HTML 类型：loading 时显示 spinner -->
+    <!-- 仅 HTML 源码模式需要 loading（需 fetch + 高亮） -->
     <a-spin
-      v-if="loading && cat !== 'html'"
+      v-if="loading"
       :loading="true"
       class="preview-loading"
       tip="加载中..."
     />
 
-    <!-- HTML 源码模式：loading 时显示 spinner -->
-    <a-spin
-      v-else-if="loading && cat === 'html' && mode === 'source'"
-      :loading="true"
-      class="preview-loading"
-      tip="加载中..."
-    />
-
-    <!-- 图片 -->
+    <!-- 图片：浏览器原生处理加载（渐进渲染） -->
     <div v-else-if="cat === 'image'" class="preview-wrap preview-wrap--fill preview-wrap--img">
-      <img :src="src" :alt="name" class="preview-img" @load="onLoaded" @error="onMediaError" />
+      <img :src="src" :alt="name" class="preview-img" @error="onMediaError" />
     </div>
 
-    <!-- 视频 -->
+    <!-- 视频：浏览器原生处理加载（buffering 指示器） -->
     <div v-else-if="cat === 'video'" class="preview-wrap preview-wrap--fill preview-wrap--video">
       <video :src="src" controls playsinline preload="metadata" class="preview-video"
-        @loadedmetadata="onLoaded" @error="onMediaError" />
+        @error="onMediaError" />
     </div>
 
-    <!-- 音频 -->
+    <!-- 音频：浏览器原生处理加载 -->
     <div v-else-if="cat === 'audio'" class="preview-wrap preview-wrap--fill preview-wrap--audio">
       <div class="audio-card">
         <div class="audio-icon"><IconMusic :size="56" /></div>
         <p class="audio-name">{{ name }}</p>
         <audio :src="src" controls preload="metadata" class="audio-player"
-          @loadedmetadata="onLoaded" @error="onMediaError" />
+          @error="onMediaError" />
       </div>
     </div>
 
-    <!-- HTML 预览模式：iframe 立即显示，浏览器自行处理加载 -->
+    <!-- HTML 预览模式：浏览器原生 iframe 加载 -->
     <div v-else-if="cat === 'html' && mode !== 'source'" class="preview-wrap preview-wrap--fill preview-wrap--html">
       <iframe
         :src="src"
@@ -47,10 +39,10 @@
       />
     </div>
 
-    <!-- HTML 源码模式：优先显示高亮内容，降级为纯文本 -->
+    <!-- HTML 源码模式：显示高亮/缓存的文本 -->
     <div v-else-if="cat === 'html' && mode === 'source'" class="preview-wrap preview-wrap--fill preview-wrap--html">
       <div v-if="highlightedHtmlContent" class="html-source html-source--highlighted" v-html="highlightedHtmlContent" />
-      <div v-else class="html-source">
+      <div v-else-if="htmlContent" class="html-source">
         <pre><code>{{ htmlContent }}</code></pre>
       </div>
     </div>
@@ -72,14 +64,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{ rendered: []; error: [msg: string] }>()
 
-const loading = ref(true)
+// 仅 HTML 源码模式需要 loading（fetch + 高亮）
+// 图片/视频/音频/HTML 预览均由浏览器原生处理，无需 loading
+const loading = ref(false)
 const htmlContent = ref('')
 const highlightedHtmlContent = ref('')
-
-function onLoaded() {
-  loading.value = false
-  emit('rendered')
-}
 
 function onMediaError() {
   loading.value = false
@@ -87,7 +76,6 @@ function onMediaError() {
 }
 
 function onPreviewLoad() {
-  loading.value = false
   emit('rendered')
 }
 
@@ -119,20 +107,20 @@ watch(() => props.src, () => {
   if (props.cat === 'html') {
     htmlContent.value = ''
     highlightedHtmlContent.value = ''
-    // 预览模式：iframe 立即显示，不需要 loading 阻塞
-    // 但需要标记 loading=true 以便 iframe @load 触发关闭
-    // 这里我们根据模式决定初始 loading 状态
     if (props.mode === 'source') {
+      // 源码模式：需 fetch + 高亮，显示 loading
       loading.value = true
       prefetchHtml()
     } else {
-      // 预览模式：iframe 直接渲染，不阻塞
+      // 预览模式：iframe 原生加载，无需 loading
       loading.value = false
       emit('rendered')
       prefetchHtml()
     }
   } else {
-    loading.value = true
+    // image / video / audio：浏览器原生处理，无需 loading
+    loading.value = false
+    emit('rendered')
   }
 }, { immediate: true })
 
@@ -162,7 +150,8 @@ watch(() => props.cat, () => {
       loading.value = false
     }
   } else {
-    loading.value = true
+    // 非 HTML 类型：浏览器原生处理
+    loading.value = false
   }
 })
 </script>
