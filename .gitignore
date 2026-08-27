@@ -13,4 +13,5 @@ src/components.d.ts
 cookies.txt
 .tmp-make-pptx.mjs
 public/test-pptx.pptx
+.playwright-cli/
 

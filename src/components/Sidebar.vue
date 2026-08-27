@@ -148,7 +148,7 @@ function onSelect(key: string) {
   >
     <div v-for="n in 6" :key="n" class="sk-menu-row">
       <a-skeleton-shape class="sk-menu-icon" />
-      <a-skeleton-line :rows="1" :widths="['70%']" :line-height="12" class="sk-menu-text" />
+      <a-skeleton-line :rows="1" :widths="['100%']" :line-height="12" class="sk-menu-text" />
       <a-skeleton-shape class="sk-menu-caret" />
     </div>
   </a-skeleton>
@@ -206,13 +206,13 @@ function onSelect(key: string) {
 
 /* 加载中：时间分组骨架（与列表区加载态统一） */
 .sidebar-skeleton {
-  padding: 8px 0 4px;
+  padding: 4px 0 2px;
 }
 .sidebar-skeleton :deep(.sk-menu-row) {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
+  height: 24px;
   padding: 0 12px;
 }
 .sidebar-skeleton :deep(.sk-menu-icon) {
@@ -224,18 +224,21 @@ function onSelect(key: string) {
 .sidebar-skeleton :deep(.sk-menu-text) {
   flex: 1;
   min-width: 0;
+  width: 0;
 }
 .sidebar-skeleton :deep(.sk-menu-caret) {
   width: 10px;
   height: 10px;
   flex-shrink: 0;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 .sidebar-skeleton :deep(.arco-skeleton-line) {
   display: block;
+  width: 100%;
   line-height: 0;
 }
 .sidebar-skeleton :deep(.arco-skeleton-line-row) {
+  width: 100% !important;
   margin-bottom: 0;
   border-radius: 2px;
 }

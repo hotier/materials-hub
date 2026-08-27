@@ -243,11 +243,13 @@ function getRowClassName(row: UnifiedRow): string {
 /** 表格容器高度，用于计算 scroll.y */
 const listRef = ref<HTMLElement | null>(null);
 const tableScrollY = ref(300);
+const containerWidth = ref(0);
 
-function calcScrollY() {
+function updateLayout() {
   if (!listRef.value) return;
   const h = listRef.value.clientHeight;
   tableScrollY.value = Math.max(200, h - 48); // 48 = Arco 表头高度
+  containerWidth.value = listRef.value.clientWidth;
 }
 
 let resizeObserver: ResizeObserver | null = null;
@@ -265,9 +267,9 @@ onMounted(() => {
   updateIsMobile();
   mq.addEventListener('change', updateIsMobile);
   nextTick(() => {
-    calcScrollY();
+    updateLayout();
     if (listRef.value) {
-      resizeObserver = new ResizeObserver(() => calcScrollY());
+      resizeObserver = new ResizeObserver(() => updateLayout());
       resizeObserver.observe(listRef.value);
     }
   });
@@ -400,27 +402,30 @@ const sizeSortable = {
 const columns = computed<TableColumnData[]>(() => {
   // 桌面端：完整列（名称/描述/标签/类型/日期/大小/操作）
   const desktop: TableColumnData[] = [
-    { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true, width: 200, slotName: 'name' },
-    { title: '描述', dataIndex: 'desc', ellipsis: true, tooltip: true, width: 220, slotName: 'desc' },
-    { title: '标签', width: 240, slotName: 'tags', filterable: tagFilterable.value },
-    { title: '类型', dataIndex: 'ext', width: 80, slotName: 'ext', filterable: extFilterable.value },
-    { title: '日期', dataIndex: 'date', width: 130, slotName: 'date', sortable: dateSortable },
-    { title: '大小', dataIndex: 'size', width: 90, slotName: 'size', sortable: sizeSortable },
+    { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true, width: 240, slotName: 'name' },
+    { title: '描述', dataIndex: 'desc', ellipsis: true, tooltip: true, minWidth: 220, slotName: 'desc' },
+    { title: '标签', width: 280, slotName: 'tags', filterable: tagFilterable.value },
+    { title: '类型', dataIndex: 'ext', width: 120, slotName: 'ext', filterable: extFilterable.value },
+    { title: '日期', dataIndex: 'date', width: 180, slotName: 'date', sortable: dateSortable },
+    { title: '大小', dataIndex: 'size', width: 130, slotName: 'size', sortable: sizeSortable },
     { title: '操作', width: 100, fixed: 'right', slotName: 'actions' },
   ];
   if (!isMobile.value) return desktop;
   // 移动端：精简列（名称/类型/日期/大小/操作），减少横向滚动距离
   return [
-    { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true, width: 170, slotName: 'name' },
-    { title: '类型', dataIndex: 'ext', width: 80, slotName: 'ext', filterable: extFilterable.value },
-    { title: '日期', dataIndex: 'date', width: 122, slotName: 'date', sortable: dateSortable },
-    { title: '大小', dataIndex: 'size', width: 82, slotName: 'size', sortable: sizeSortable },
+    { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true, minWidth: 200, slotName: 'name' },
+    { title: '类型', dataIndex: 'ext', width: 112, slotName: 'ext', filterable: extFilterable.value },
+    { title: '日期', dataIndex: 'date', width: 160, slotName: 'date', sortable: dateSortable },
+    { title: '大小', dataIndex: 'size', width: 112, slotName: 'size', sortable: sizeSortable },
     { title: '操作', width: 92, fixed: 'right', slotName: 'actions' },
   ];
 });
 
 /** 表格横向滚动宽度：移动端收窄，桌面端保持原样 */
-const tableScrollX = computed(() => (isMobile.value ? 600 : 1100));
+const tableScrollX = computed(() => {
+  const min = isMobile.value ? 600 : 1100;
+  return Math.max(min, containerWidth.value);
+});
 
 /* ======== 事件 ======== */
 function formatDate(ts?: number | string): string {
@@ -527,49 +532,35 @@ function handleFilterChange(field: string, values: string[]) {
       class="list-skeleton"
       aria-busy="true"
     >
-      <!-- 表头占位行（无动画） -->
-      <div class="skeleton-head" aria-hidden="true">
-        <span class="sk-head-cell sk-h-check" />
-        <span class="sk-head-cell sk-h-name" />
-        <span class="sk-head-cell sk-h-desc" />
-        <span class="sk-head-cell sk-h-tags" />
-        <span class="sk-head-cell sk-h-ext" />
-        <span class="sk-head-cell sk-h-date" />
-        <span class="sk-head-cell sk-h-size" />
-        <span class="sk-head-cell sk-h-actions" />
-      </div>
       <a-skeleton animation>
         <div v-for="n in 8" :key="n" class="skeleton-row">
           <span class="sk-col sk-col-check">
             <a-skeleton-shape class="sk-checkbox" />
           </span>
           <span class="sk-col sk-col-name">
-            <a-skeleton-shape class="sk-file-icon" />
             <span class="sk-name-lines">
-              <a-skeleton-line :rows="1" :widths="['60%']" :line-height="12" />
-              <a-skeleton-line :rows="1" :widths="['40%']" :line-height="12" />
+              <a-skeleton-line :rows="1" :widths="['60%']" :line-height="16" />
             </span>
           </span>
           <span class="sk-col sk-col-desc">
-            <a-skeleton-line :rows="1" :widths="[120]" :line-height="12" />
+            <a-skeleton-line :rows="1" :widths="[120]" :line-height="16" />
           </span>
           <span class="sk-col sk-col-tags">
             <span class="sk-tag-group">
-              <a-skeleton-line :rows="1" :widths="[44]" :line-height="16" />
-              <a-skeleton-line :rows="1" :widths="[60]" :line-height="16" />
+              <a-skeleton-line :rows="1" :widths="[52]" :line-height="16" />
+              <a-skeleton-line :rows="1" :widths="[52]" :line-height="16" />
             </span>
           </span>
           <span class="sk-col sk-col-ext">
             <a-skeleton-line :rows="1" :widths="[40]" :line-height="16" />
           </span>
           <span class="sk-col sk-col-date">
-            <a-skeleton-line :rows="1" :widths="[70]" :line-height="12" />
+            <a-skeleton-line :rows="1" :widths="[70]" :line-height="16" />
           </span>
           <span class="sk-col sk-col-size">
-            <a-skeleton-line :rows="1" :widths="[40]" :line-height="12" />
+            <a-skeleton-line :rows="1" :widths="[40]" :line-height="16" />
           </span>
           <span class="sk-col sk-col-actions">
-            <a-skeleton-shape class="sk-action-dot" />
             <a-skeleton-shape class="sk-action-dot" />
           </span>
         </div>
@@ -678,7 +669,7 @@ function handleFilterChange(field: string, values: string[]) {
         </div>
       </template>
       <template #empty>
-        <div :style="{ minHeight: tableScrollY - 48 + 'px', display: 'flex', alignItems: 'center', justifyContent: 'center' }">
+        <div v-if="!loading" :style="{ minHeight: tableScrollY - 48 + 'px', display: 'flex', alignItems: 'center', justifyContent: 'center' }">
           <a-empty :description="emptyDescription" />
         </div>
       </template>
@@ -974,55 +965,26 @@ function handleFilterChange(field: string, values: string[]) {
 /* ========== 骨架屏：初始加载时按表格列结构占位 ========== */
 .list-skeleton {
   position: absolute;
-  inset: 36px 0 0 0; /* 避开面包屑高度 */
+  inset: 76px 0 0 0; /* 避开面包屑(36px)+表格表头(40px) */
   /* 必须高于 Arco 固定列(z-index:10)的表头/单元格，否则多选列、操作列会穿透加载层常驻显示 */
   z-index: 20;
   /* 背景保持与页面一致（透明），避免右侧出现整块色差空白 */
   overflow: hidden;
 }
 
-/* 表头占位行（无动画）：总宽与表格 scroll.x 一致，左对齐与表格重叠 */
-.skeleton-head {
-  display: flex;
-  align-items: center;
-  width: 1100px;
-  height: 40px;
-  border-bottom: 1px solid var(--color-border-2);
-}
-.skeleton-head .sk-head-cell {
-  flex: 1 0 auto; /* 余量均分，使列边界与 Arco 单元格（含 padding）对齐 */
-  box-sizing: border-box;
-  padding: 0 8px;
-}
-.skeleton-head .sk-head-cell::after {
-  content: '';
-  display: block;
-  width: 60%;
-  height: 10px;
-  border-radius: 2px;
-  background: var(--color-fill-3, #e5e6eb);
-}
-.sk-h-check { flex: 0 0 24px; width: 24px; padding: 0; }
-.sk-h-name { width: 200px; }
-.sk-h-desc { width: 220px; }
-.sk-h-tags { width: 240px; }
-.sk-h-ext { width: 80px; }
-.sk-h-date { width: 130px; }
-.sk-h-size { width: 90px; }
-.sk-h-actions { width: 100px; }
-
 /* 骨架行：模拟表格行，总宽与表格一致，列宽与真实表格对齐 */
 .list-skeleton :deep(.skeleton-row) {
   display: flex;
   align-items: center;
-  width: 1100px;
-  height: 42px;
+  width: 100%;
+  min-width: 1100px;
+  height: 48px;
   border-bottom: 1px solid var(--color-border-2);
 }
 .list-skeleton :deep(.sk-col) {
   display: flex;
   align-items: center;
-  flex: 1 0 auto; /* 余量均分，列边界与 Arco 实际单元格对齐 */
+  flex: 0 0 auto; /* 固定列宽，描述列单独伸展填满剩余宽度 */
   box-sizing: border-box;
   padding: 0 8px;
   overflow: hidden;
@@ -1034,23 +996,23 @@ function handleFilterChange(field: string, values: string[]) {
   justify-content: center;
 }
 .list-skeleton :deep(.sk-col-name) {
-  width: 200px;
-  gap: 8px;
-}
-.list-skeleton :deep(.sk-col-desc) {
-  width: 220px;
-}
-.list-skeleton :deep(.sk-col-tags) {
   width: 240px;
 }
+.list-skeleton :deep(.sk-col-desc) {
+  flex: 1;
+  min-width: 220px;
+}
+.list-skeleton :deep(.sk-col-tags) {
+  width: 280px;
+}
 .list-skeleton :deep(.sk-col-ext) {
-  width: 80px;
+  width: 120px;
 }
 .list-skeleton :deep(.sk-col-date) {
-  width: 130px;
+  width: 180px;
 }
 .list-skeleton :deep(.sk-col-size) {
-  width: 90px;
+  width: 130px;
 }
 .list-skeleton :deep(.sk-col-actions) {
   width: 100px;
@@ -1062,13 +1024,6 @@ function handleFilterChange(field: string, values: string[]) {
   width: 14px;
   height: 14px;
   border-radius: 3px;
-}
-/* 文件图标占位 */
-.list-skeleton :deep(.sk-file-icon) {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  border-radius: 4px;
 }
 /* 名称列两行文本 */
 .list-skeleton :deep(.sk-name-lines) {
@@ -1087,7 +1042,7 @@ function handleFilterChange(field: string, values: string[]) {
 .list-skeleton :deep(.sk-action-dot) {
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: 4px;
 }
 
 /* 骨架线统一压缩间距 */
@@ -1100,28 +1055,30 @@ function handleFilterChange(field: string, values: string[]) {
   margin-bottom: 0;
   border-radius: 2px;
 }
+/* 统一骨架行背景与动画相位，避免首行与其余行色差 */
+.list-skeleton :deep(.arco-skeleton),
+.list-skeleton :deep(.arco-skeleton-shape),
+.list-skeleton :deep(.arco-skeleton-line-row) {
+  animation-delay: 0s !important;
+}
+.list-skeleton :deep(.skeleton-row) {
+  background: #ffffff;
+}
 
 /* 移动端：隐藏描述、标签列，压缩列宽（与表格列渲染一致） */
 @media (max-width: 768px) {
-  .skeleton-head,
   .list-skeleton :deep(.skeleton-row) {
-    width: 600px; /* 对齐移动端表格 scroll.x */
+    width: 100%;
+    min-width: 600px; /* 对齐移动端表格 scroll.x */
   }
-  .skeleton-head .sk-h-desc,
-  .skeleton-head .sk-h-tags,
   .list-skeleton :deep(.sk-col-desc),
   .list-skeleton :deep(.sk-col-tags) {
     display: none;
   }
-  .skeleton-head .sk-h-name,
-  .list-skeleton :deep(.sk-col-name) { width: 170px; }
-  .skeleton-head .sk-h-ext,
-  .list-skeleton :deep(.sk-col-ext) { width: 80px; }
-  .skeleton-head .sk-h-date,
-  .list-skeleton :deep(.sk-col-date) { width: 122px; }
-  .skeleton-head .sk-h-size,
-  .list-skeleton :deep(.sk-col-size) { width: 82px; }
-  .skeleton-head .sk-h-actions,
+  .list-skeleton :deep(.sk-col-name) { flex: 1; min-width: 200px; }
+  .list-skeleton :deep(.sk-col-ext) { width: 112px; }
+  .list-skeleton :deep(.sk-col-date) { width: 160px; }
+  .list-skeleton :deep(.sk-col-size) { width: 112px; }
   .list-skeleton :deep(.sk-col-actions) { width: 92px; }
 }
 
