@@ -65,6 +65,53 @@ function downloadSrc(key: string): string {
   return `/api/raw?key=${encodeURIComponent(key)}&download=1`;
 }
 
+/**
+ * 处理 HTTP Range 请求（浏览器 <audio>/<video> 拖动进度条依赖 206 切片）。
+ * body 已由 getFileByKey 全量读入内存，直接切片返回，无需再次访问 R2。
+ * 返回 null 表示忽略 Range（无法解析时按完整响应处理，与标准行为一致）。
+ */
+export function buildRangeResponse(
+  rangeHeader: string,
+  body: ArrayBuffer,
+  contentType: string,
+): Response | null {
+  const total = body.byteLength;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  // 非法 Range（如多段 bytes=a-b,c-d 或非数字）：忽略，返回完整内容
+  if (!m) return null;
+
+  const [, s, e] = m;
+  let start: number;
+  let end: number;
+  if (s === '' && e === '') return null;
+  if (s === '') {
+    // 后缀范围 bytes=-N：返回最后 N 字节
+    start = Math.max(0, total - Number(e));
+    end = total - 1;
+  } else {
+    start = Number(s);
+    end = e === '' ? total - 1 : Math.min(Number(e), total - 1);
+  }
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= total) {
+    return new Response(null, {
+      status: 416,
+      headers: { 'Content-Range': `bytes */${total}` },
+    });
+  }
+
+  return new Response(body.slice(start, end + 1), {
+    status: 206,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Range': `bytes ${start}-${end}/${total}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': String(end - start + 1),
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
+}
+
 /** 浏览器无法解析的类型：返回提示页（标题=文件名 + 下载按钮） */
 function buildNoticePage(title: string, key: string, ext: string): string {
   const extText = ext ? `（.${escapeHtml(ext)}）` : '';
@@ -189,12 +236,20 @@ rawRoute.get('/', async (c) => {
   // ---- 其余请求：直接返回原文件 ----
   const headers: Record<string, string> = {
     'Content-Type': ct,
+    'Accept-Ranges': 'bytes',
     'Cache-Control': 'public, max-age=3600',
   };
   // 设置文件名：PDF 等场景浏览器原生 viewer 会将其显示为标题
   if (fileName) {
     headers['Content-Disposition'] =
       `inline; filename="download${ext ? '.' + ext : ''}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+  }
+
+  // <audio>/<video> 拖动进度条时浏览器会发送 Range 请求，返回 206 切片
+  const range = c.req.header('Range');
+  if (range) {
+    const rangeRes = buildRangeResponse(range, result.body, ct);
+    if (rangeRes) return rangeRes;
   }
 
   return new Response(result.body, { headers });
