@@ -404,7 +404,7 @@ const columns = computed<TableColumnData[]>(() => {
   const desktop: TableColumnData[] = [
     { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true, width: 240, slotName: 'name' },
     { title: '描述', dataIndex: 'desc', ellipsis: true, tooltip: true, minWidth: 220, slotName: 'desc' },
-    { title: '标签', width: 280, slotName: 'tags', filterable: tagFilterable.value },
+    { title: '标签', width: 320, slotName: 'tags', filterable: tagFilterable.value },
     { title: '类型', dataIndex: 'ext', width: 120, slotName: 'ext', filterable: extFilterable.value },
     { title: '日期', dataIndex: 'date', width: 180, slotName: 'date', sortable: dateSortable },
     { title: '大小', dataIndex: 'size', width: 130, slotName: 'size', sortable: sizeSortable },
@@ -547,8 +547,8 @@ function handleFilterChange(field: string, values: string[]) {
           </span>
           <span class="sk-col sk-col-tags">
             <span class="sk-tag-group">
-              <a-skeleton-line :rows="1" :widths="[52]" :line-height="16" />
-              <a-skeleton-line :rows="1" :widths="[52]" :line-height="16" />
+              <a-skeleton-line :rows="1" :widths="[64]" :line-height="16" />
+              <a-skeleton-line :rows="1" :widths="[64]" :line-height="16" />
             </span>
           </span>
           <span class="sk-col sk-col-ext">
@@ -1003,7 +1003,7 @@ function handleFilterChange(field: string, values: string[]) {
   min-width: 220px;
 }
 .list-skeleton :deep(.sk-col-tags) {
-  width: 280px;
+  width: 320px;
 }
 .list-skeleton :deep(.sk-col-ext) {
   width: 120px;
