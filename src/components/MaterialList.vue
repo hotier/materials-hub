@@ -929,7 +929,8 @@ function handleFilterChange(field: string, values: string[]) {
 .list-overlay {
   position: absolute;
   inset: 36px 0 0 0; /* 避开面包屑高度 */
-  z-index: 10;
+  /* 必须高于 Arco 固定列(z-index:10)的表头/单元格，否则多选列、操作列会穿透加载覆盖层常驻显示 */
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
