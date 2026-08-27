@@ -156,6 +156,17 @@ rawRoute.get('/', async (c) => {
       });
     }
 
+    // HTML：原样返回，让浏览器/iframe 原生渲染（标题来自文件自身的 <title>）。
+    // 注意 isTextual 已排除 text/html（避免被文本代码块包裹），故在此兜底。
+    if (ct.startsWith('text/html') || ct.includes('html')) {
+      return new Response(result.body, {
+        headers: {
+          'Content-Type': ct,
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
     // PDF：浏览器原生 viewer 渲染，直接返回（标题来自 Content-Disposition）
     const isPdf = ct === 'application/pdf' || ct === 'application/x-pdf' || ct.endsWith('/pdf');
     if (!isPdf) {
