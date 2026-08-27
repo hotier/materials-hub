@@ -156,8 +156,8 @@ export function useApi() {
     return `${BASE}/preview?id=${encodeURIComponent(id)}`;
   }
 
-  function rawUrl(r2Key: string): string {
-    return `${BASE}/raw?key=${encodeURIComponent(r2Key)}`;
+  function rawUrl(r2Key: string, view = false): string {
+    return `${BASE}/raw?key=${encodeURIComponent(r2Key)}${view ? '&view=1' : ''}`;
   }
 
   function getPreviewPageUrl(id: string): string {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick, defineAsyncComponent } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { IconArrowLeft, IconDownload, IconFile } from '@arco-design/web-vue/es/icon';
 import { useApi } from '@/composables/useApi';
@@ -9,10 +9,16 @@ import { getExtIcon, getExtColor } from '@/utils/fileType';
 import MdPreview from '@/components/preview/MdPreview.vue';
 import CodePreview from '@/components/preview/CodePreview.vue';
 import MediaPreview from '@/components/preview/MediaPreview.vue';
-import DocxPreview from '@/components/preview/DocxPreview.vue';
-import ExcelPreview from '@/components/preview/ExcelPreview.vue';
 import PdfPreview from '@/components/preview/PdfPreview.vue';
 import type { Material } from '@/types';
+
+/** Office 预览组件体积大（docx/xlsx/pptx 解析库），按需动态加载，仅在打开对应类型时才下载对应库 */
+const docxLoader = () => import('@/components/preview/DocxPreview.vue');
+const excelLoader = () => import('@/components/preview/ExcelPreview.vue');
+const pptxLoader = () => import('@/components/preview/PptxPreview.vue');
+const DocxPreview = defineAsyncComponent({ loader: docxLoader });
+const ExcelPreview = defineAsyncComponent({ loader: excelLoader });
+const PptxPreview = defineAsyncComponent({ loader: pptxLoader });
 
 const route = useRoute();
 const router = useRouter();
@@ -94,6 +100,16 @@ async function loadItem(id: string) {
     if (res.success && res.data) {
       item.value = res.data;
       document.title = stripExt(item.value.name || '文件预览');
+      // 预取 Office 组件库，避免渲染时再出现第二个 loading；
+      // 预取失败不影响已加载的元数据，交由组件自身处理错误
+      const c = getCategory(item.value);
+      try {
+        if (c === 'docx') await docxLoader();
+        else if (c === 'excel') await excelLoader();
+        else if (c === 'pptx') await pptxLoader();
+      } catch {
+        /* ignore */
+      }
     } else {
       errorMsg.value = res.message || '文件不存在或已被删除';
     }
@@ -189,6 +205,7 @@ function download() {
         <!-- Office -->
         <DocxPreview v-else-if="cat === 'docx'" :src="fileUrl" />
         <ExcelPreview v-else-if="cat === 'excel'" :url="fileUrl" />
+        <PptxPreview v-else-if="cat === 'pptx'" :src="fileUrl" />
         <PdfPreview v-else-if="cat === 'pdf'" :url="fileUrl" />
         <!-- 媒体 -->
         <MediaPreview v-else-if="cat === 'image' || cat === 'video' || cat === 'audio' || cat === 'html'" :src="fileUrl" :name="item.name" :cat="cat" :mode="viewMode" />
@@ -276,9 +293,17 @@ function download() {
 }
 .preview-loading {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
+  gap: var(--gap-sm);
+}
+.preview-loading :deep(.arco-spin-icon) {
+  margin-right: 0;
+}
+.preview-loading :deep(.arco-spin-tip) {
+  margin-left: 0;
 }
 .preview-unknown {
   display: flex;

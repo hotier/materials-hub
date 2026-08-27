@@ -11,8 +11,11 @@ import {
   IconFolder,
 } from '@arco-design/web-vue/es/icon';
 import type { Material } from '@/types';
-import type { TableColumnData } from '@arco-design/web-vue';
+import type { TableColumnData, TableData } from '@arco-design/web-vue';
 import { getExtIcon, getExtColor, FOLDER_COLOR } from '@/utils/fileType';
+import { useApi } from '@/composables/useApi';
+import { usePreview } from '@/composables/usePreview';
+import EllipsisTooltip from '@/components/EllipsisTooltip.vue';
 
 const props = defineProps<{
   items: Material[];
@@ -45,7 +48,7 @@ interface FolderEntry {
   name: string;
   fullPath: string;
   count: number;
-  earliestDate?: number | string;
+  latestDate?: number | string;
   totalSize: number;
 }
 
@@ -56,7 +59,7 @@ interface UnifiedRow {
   name: string;
   fullPath: string;
   count?: number;
-  earliestDate?: number | string;
+  latestDate?: number | string;
   totalSize?: number;
   material?: Material;
 }
@@ -80,18 +83,18 @@ const folderList = computed<FolderEntry[]>(() => {
     const slash = rest.indexOf('/');
     const name = slash === -1 ? rest : rest.slice(0, slash);
     const fullPath = props.currentFolder ? `${props.currentFolder}/${name}` : name;
-    const entry = map.get(fullPath) ?? { name, fullPath, count: 0, earliestDate: undefined, totalSize: 0 };
+    const entry = map.get(fullPath) ?? { name, fullPath, count: 0, latestDate: undefined, totalSize: 0 };
     entry.count += 1;
     // 累加文件大小
     entry.totalSize += m.size || 0;
-    // 收集文件夹内最早文件日期
+    // 收集文件夹内最新文件日期
     const fileDate = m.createTime || m.uploadedAt;
     if (fileDate) {
       const curr = new Date(fileDate).getTime();
       if (!isNaN(curr)) {
-        const prev = entry.earliestDate ? new Date(entry.earliestDate).getTime() : Infinity;
-        if (curr < prev) {
-          entry.earliestDate = fileDate;
+        const prev = entry.latestDate ? new Date(entry.latestDate).getTime() : -Infinity;
+        if (curr > prev) {
+          entry.latestDate = fileDate;
         }
       }
     }
@@ -151,7 +154,7 @@ const unifiedList = computed<UnifiedRow[]>(() => {
     name: f.name,
     fullPath: f.fullPath,
     count: f.count,
-    earliestDate: f.earliestDate,
+    latestDate: f.latestDate,
     totalSize: f.totalSize,
   }));
   const fileRows: UnifiedRow[] = fileList.value.map((m) => ({
@@ -162,8 +165,8 @@ const unifiedList = computed<UnifiedRow[]>(() => {
     material: m,
   }));
   return [...folderRows, ...fileRows].sort((a, b) => {
-    const aDate = a.material?.createTime || a.earliestDate || 0;
-    const bDate = b.material?.createTime || b.earliestDate || 0;
+    const aDate = a.material?.createTime || a.latestDate || 0;
+    const bDate = b.material?.createTime || b.latestDate || 0;
     return new Date(bDate).getTime() - new Date(aDate).getTime();
   });
 });
@@ -239,7 +242,6 @@ function getRowClassName(row: UnifiedRow): string {
 
 /** 表格容器高度，用于计算 scroll.y */
 const listRef = ref<HTMLElement | null>(null);
-const popupContainer = document.body;
 const tableScrollY = ref(300);
 
 function calcScrollY() {
@@ -250,7 +252,18 @@ function calcScrollY() {
 
 let resizeObserver: ResizeObserver | null = null;
 
+/* ======== 移动端检测（768px 以下），用于响应式列定义 ======== */
+const isMobile = ref(false);
+let mq: MediaQueryList | null = null;
+
+function updateIsMobile() {
+  isMobile.value = window.matchMedia('(max-width: 768px)').matches;
+}
+
 onMounted(() => {
+  mq = window.matchMedia('(max-width: 768px)');
+  updateIsMobile();
+  mq.addEventListener('change', updateIsMobile);
   nextTick(() => {
     calcScrollY();
     if (listRef.value) {
@@ -261,6 +274,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  mq?.removeEventListener('change', updateIsMobile);
   resizeObserver?.disconnect();
   clearAllPopups();
 });
@@ -335,90 +349,78 @@ function handleBatchDelete() {
 }
 
 /* ======== 列定义 ======== */
-const columns = computed(() => [
-  {
-    title: '名称',
-    dataIndex: 'name',
-    ellipsis: true,
-    tooltip: true,
-    width: 200,
-    slotName: 'name',
+/** 类型列筛选配置（桌面/移动共用） */
+const extFilterable = computed<TableColumnData['filterable']>(() => ({
+  filters: extFilterOptions.value,
+  filter: (filteredValue: string[], record: TableData) => {
+    if (!filteredValue || filteredValue.length === 0) return true;
+    const r = record as UnifiedRow;
+    if (r.kind === 'folder') return false;
+    const ext = (r.material?.ext || '').toUpperCase();
+    return filteredValue.includes(ext);
   },
-  {
-    title: '描述',
-    dataIndex: 'desc',
-    ellipsis: true,
-    tooltip: true,
-    width: 220,
-    slotName: 'desc',
+  multiple: true,
+}));
+
+/** 标签列筛选配置 */
+const tagFilterable = computed<TableColumnData['filterable']>(() => ({
+  filters: tagFilterOptions.value,
+  filter: (filteredValue: string[], record: TableData) => {
+    if (!filteredValue || filteredValue.length === 0) return true;
+    const r = record as UnifiedRow;
+    if (r.kind !== 'file') return false;
+    if (!r.material?.tags || r.material.tags.length === 0) return false;
+    return filteredValue.some((v) => r.material!.tags!.includes(v));
   },
-  {
-    title: '标签',
-    width: 240,
-    slotName: 'tags',
-    filterable: {
-      filters: tagFilterOptions.value,
-      filter: (filteredValue: string[], record: UnifiedRow) => {
-        if (!filteredValue || filteredValue.length === 0) return true;
-        if (record.kind !== 'file') return false;
-        if (!record.material?.tags || record.material.tags.length === 0) return false;
-        return filteredValue.some((v) => record.material!.tags!.includes(v));
-      },
-      multiple: true,
-    },
+  multiple: true,
+}));
+
+/** 日期列排序配置：数据默认已按日期降序排列，故不设 defaultSortOrder，初始不激活排序状态 */
+const dateSortable = {
+  sortDirections: ['ascend', 'descend'],
+  sorter: (a: UnifiedRow, b: UnifiedRow, options?: { direction?: string }) => {
+    const aDate = a.material?.createTime || a.latestDate || 0;
+    const bDate = b.material?.createTime || b.latestDate || 0;
+    const result = new Date(aDate).getTime() - new Date(bDate).getTime();
+    return options?.direction === 'descend' ? -result : result;
   },
-  {
-    title: '类型',
-    dataIndex: 'ext',
-    width: 80,
-    slotName: 'ext',
-    filterable: {
-      filters: extFilterOptions.value,
-      filter: (filteredValue: string[], record: UnifiedRow) => {
-        if (!filteredValue || filteredValue.length === 0) return true;
-        if (record.kind === 'folder') return false;
-        const ext = (record.material?.ext || '').toUpperCase();
-        return filteredValue.includes(ext);
-      },
-      multiple: true,
-    },
+} as unknown as TableColumnData['sortable'];
+
+/** 大小列排序配置 */
+const sizeSortable = {
+  sortDirections: ['ascend', 'descend'],
+  sorter: (a: UnifiedRow, b: UnifiedRow, options?: { direction?: string }) => {
+    const aSize = a.material?.size || a.totalSize || 0;
+    const bSize = b.material?.size || b.totalSize || 0;
+    const result = aSize - bSize;
+    return options?.direction === 'descend' ? -result : result;
   },
-  {
-    title: '日期',
-    dataIndex: 'date',
-    width: 130,
-    slotName: 'date',
-    sortable: {
-      sortDirections: ['ascend', 'descend'],
-      defaultSortOrder: 'descend',
-      sorter: (a: UnifiedRow, b: UnifiedRow) => {
-        const aDate = a.material?.createTime || a.earliestDate || 0;
-        const bDate = b.material?.createTime || b.earliestDate || 0;
-        return new Date(aDate).getTime() - new Date(bDate).getTime();
-      },
-    },
-  },
-  {
-    title: '大小',
-    dataIndex: 'size',
-    width: 90,
-    slotName: 'size',
-    sortable: {
-      sortDirections: ['ascend', 'descend'],
-      sorter: (a: UnifiedRow, b: UnifiedRow) => {
-        const aSize = a.material?.size || a.totalSize || 0;
-        const bSize = b.material?.size || b.totalSize || 0;
-        return aSize - bSize;
-      },
-    },
-  },
-  {
-    title: '操作',
-    width: 100,
-    fixed: 'right',
-    slotName: 'actions',
-  },
-] as TableColumnData[]);
+} as unknown as TableColumnData['sortable'];
+
+const columns = computed<TableColumnData[]>(() => {
+  // 桌面端：完整列（名称/描述/标签/类型/日期/大小/操作）
+  const desktop: TableColumnData[] = [
+    { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true, width: 200, slotName: 'name' },
+    { title: '描述', dataIndex: 'desc', ellipsis: true, tooltip: true, width: 220, slotName: 'desc' },
+    { title: '标签', width: 240, slotName: 'tags', filterable: tagFilterable.value },
+    { title: '类型', dataIndex: 'ext', width: 80, slotName: 'ext', filterable: extFilterable.value },
+    { title: '日期', dataIndex: 'date', width: 130, slotName: 'date', sortable: dateSortable },
+    { title: '大小', dataIndex: 'size', width: 90, slotName: 'size', sortable: sizeSortable },
+    { title: '操作', width: 100, fixed: 'right', slotName: 'actions' },
+  ];
+  if (!isMobile.value) return desktop;
+  // 移动端：精简列（名称/类型/日期/大小/操作），减少横向滚动距离
+  return [
+    { title: '名称', dataIndex: 'name', ellipsis: true, tooltip: true, width: 170, slotName: 'name' },
+    { title: '类型', dataIndex: 'ext', width: 80, slotName: 'ext', filterable: extFilterable.value },
+    { title: '日期', dataIndex: 'date', width: 122, slotName: 'date', sortable: dateSortable },
+    { title: '大小', dataIndex: 'size', width: 82, slotName: 'size', sortable: sizeSortable },
+    { title: '操作', width: 92, fixed: 'right', slotName: 'actions' },
+  ];
+});
+
+/** 表格横向滚动宽度：移动端收窄，桌面端保持原样 */
+const tableScrollX = computed(() => (isMobile.value ? 600 : 1100));
 
 /* ======== 事件 ======== */
 function formatDate(ts?: number | string): string {
@@ -451,8 +453,15 @@ async function handleCopyLink(record: Material) {
 }
 
 function handleOpenNewWindow(record: Material) {
-  const url = `${window.location.origin}/preview?id=${record.id}`;
-  window.open(url, '_blank');
+  const cat = usePreview().getCategory(record);
+  // Office / 未知类型：浏览器无法原生渲染（raw 只会返回"暂不支持"提示页），
+  // 新窗口打开前端预览页，由 Docx/Pptx 等组件渲染
+  if (cat === 'docx' || cat === 'excel' || cat === 'pptx' || cat === 'unknown') {
+    window.open(useApi().getPreviewPageUrl(record.id), '_blank');
+    return;
+  }
+  // 图片/视频/音频/PDF/文本/代码等：浏览器可原生解析，直接打开原文件
+  window.open(useApi().rawUrl(record.R2Key, true), '_blank');
 }
 
 /** 排序变化处理 */
@@ -535,7 +544,7 @@ function handleFilterChange(field: string, values: string[]) {
       row-key="key"
       :hoverable="true"
       size="medium"
-      :scroll="{ x: 1100, y: tableScrollY }"
+      :scroll="{ x: tableScrollX, y: tableScrollY }"
       @sorter-change="(field, direction) => handleSortChange(field as string, direction)"
       @filter-change="(field, values) => handleFilterChange(field as string, values as string[])"
     >
@@ -543,16 +552,12 @@ function handleFilterChange(field: string, values: string[]) {
         <!-- 文件夹行 -->
         <span v-if="record.kind === 'folder'" class="cell-folder-name" @click="handleRowClick(record)">
           <IconFolder :size="16" class="name-icon" />
-          <a-tooltip :content="record.name" position="top" :mouse-enter-delay="400" :popup-container="popupContainer" :arrow="true">
-            <span>{{ record.name }}</span>
-          </a-tooltip>
+          <EllipsisTooltip :content="record.name">{{ record.name }}</EllipsisTooltip>
         </span>
         <!-- 文件行 -->
         <span v-else class="cell-name" @click="handleFileClick(record.material!)">
           <component :is="getExtIcon(record.material?.ext || '')" :width="16" :height="16" class="name-icon" />
-          <a-tooltip :content="record.material?.name" position="top" :mouse-enter-delay="400" :popup-container="popupContainer" :arrow="true">
-            <span>{{ record.material?.name }}</span>
-          </a-tooltip>
+          <EllipsisTooltip :content="record.material?.name || ''">{{ record.material?.name }}</EllipsisTooltip>
           <span v-if="hasActiveFilter && record.fullPath" class="cell-path-hint">
             <!-- 筛选模式下显示子文件夹路径 -->
             {{ getRelativePath(record.fullPath) }}
@@ -561,9 +566,7 @@ function handleFilterChange(field: string, values: string[]) {
       </template>
       <template #desc="{ record }">
         <template v-if="record.kind === 'file'">
-          <a-tooltip :content="record.material?.desc || ''" position="top" :mouse-enter-delay="400" :popup-container="popupContainer" :arrow="true">
-            <span class="cell-desc">{{ record.material?.desc || '-' }}</span>
-          </a-tooltip>
+          <EllipsisTooltip :content="record.material?.desc || ''" text-class="cell-desc">{{ record.material?.desc || '-' }}</EllipsisTooltip>
         </template>
         <span v-else class="cell-muted">-</span>
       </template>
@@ -594,7 +597,7 @@ function handleFilterChange(field: string, values: string[]) {
       </template>
       <template #date="{ record }">
         <span v-if="record.kind === 'file'" class="cell-date">{{ formatDate(record.material?.createTime) }}</span>
-        <span v-else class="cell-date">{{ formatDate(record.earliestDate) }}</span>
+        <span v-else class="cell-date">{{ formatDate(record.latestDate) }}</span>
       </template>
       <template #size="{ record }">
         <span v-if="record.kind === 'file'" class="cell-size">{{ formatSize(record.material?.size) }}</span>
@@ -721,6 +724,8 @@ function handleFilterChange(field: string, values: string[]) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0; /* flex 子项允许收缩，溢出检测（scrollWidth>clientWidth）才准确 */
+  max-width: 100%;
 }
 
 /* ======== 表格 ======== */
@@ -825,6 +830,8 @@ function handleFilterChange(field: string, values: string[]) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0; /* flex 子项允许收缩，溢出检测（scrollWidth>clientWidth）才准确 */
+  max-width: 100%;
 }
 .cell-path-hint {
   color: var(--color-text-4);
@@ -933,6 +940,27 @@ function handleFilterChange(field: string, values: string[]) {
   justify-content: center;
   width: 100%;
   height: 100%;
+}
+
+/* ======== 移动端适配（仅影响 <768px，桌面端不受影响） ======== */
+@media (max-width: 768px) {
+  /* 触屏无 hover：复选框始终可见，保证可勾选行 */
+  .list-table :deep(.arco-table-td.arco-table-checkbox .arco-checkbox) {
+    opacity: 1;
+  }
+  /* 面包屑过长时横向滚动 */
+  .crumb-bar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+  /* 批量操作栏在移动端紧凑一些 */
+  .batch-bar {
+    padding: 8px var(--gap-md);
+  }
+  .batch-actions {
+    gap: var(--gap-xs);
+  }
 }
 </style>
 

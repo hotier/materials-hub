@@ -14,17 +14,17 @@
 import type { MaterialItem } from '../types';
 import { ConflictError } from './errors';
 
-const INDEX_KEY = 'materials:ids';
-const ITEM_PREFIX = 'material:';
-const ITEM_VERSION_PREFIX = 'material:v:';
+export const INDEX_KEY = 'materials:ids';
+export const ITEM_PREFIX = 'material:';
+export const ITEM_VERSION_PREFIX = 'material:v:';
 
 /** 生成带前缀的 item key */
-function itemKey(id: string) {
+export function itemKey(id: string) {
   return `${ITEM_PREFIX}${id}`;
 }
 
 /** 生成版本号 key */
-function versionKey(id: string) {
+export function versionKey(id: string) {
   return `${ITEM_VERSION_PREFIX}${id}`;
 }
 
@@ -46,7 +46,7 @@ export async function getVersion(KV: KVNamespace, id: string): Promise<number> {
 }
 
 /** 递增版本号（返回新版本号） */
-async function incrVersion(KV: KVNamespace, id: string): Promise<number> {
+export async function incrVersion(KV: KVNamespace, id: string): Promise<number> {
   const newVer = (await getVersion(KV, id)) + 1;
   await KV.put(versionKey(id), String(newVer));
   return newVer;
@@ -114,7 +114,7 @@ export async function getIdIndex(KV: KVNamespace): Promise<string[]> {
 }
 
 /** 写入 ID 索引 */
-async function setIdIndex(KV: KVNamespace, ids: string[]): Promise<void> {
+export async function setIdIndex(KV: KVNamespace, ids: string[]): Promise<void> {
   await KV.put(INDEX_KEY, JSON.stringify(ids));
 }
 

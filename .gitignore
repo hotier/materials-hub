@@ -8,3 +8,9 @@ src/auto-imports.d.ts
 src/components.d.ts
 .devserver.err.log
 .devserver.out.log
+
+# 敏感/本地临时文件（勿提交）
+cookies.txt
+.tmp-make-pptx.mjs
+public/test-pptx.pptx
+

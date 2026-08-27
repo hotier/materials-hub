@@ -63,39 +63,36 @@ const timeGroups = computed<TimeYear[]>(() => {
 /** 当前年份 */
 const currentYear = String(new Date().getFullYear());
 
-/** 初始展开：当前年份始终展开 */
+/** 初始展开：选中 key 所在路径（年、月）；未选中具体日期（如"全部"）时展开最近年份 */
 function initOpenKeys(): string[] {
-  const keys = new Set<string>([currentYear]);
   const m = /^(\d{4})(?:-(\d{2}))?/.exec(props.selectedKey);
   if (m) {
-    if (m[1]) keys.add(m[1]);
-    if (m[1] && m[2]) keys.add(`${m[1]}-${m[2]}`);
+    const keys = new Set<string>([m[1]]);
+    if (m[2]) keys.add(`${m[1]}-${m[2]}`);
+    return [...keys];
   }
-  return [...keys];
+  return [currentYear];
 }
 const openKeys = ref<string[]>(initOpenKeys());
 
-/** 监听选中变化：选择年份时自动展开该年份，关闭其他年份 */
+/** 监听选中变化：重建展开状态，只保留选中路径（年份 + 其月份），其余全部收起 */
 watch(
   () => props.selectedKey,
   (key) => {
     if (!key || key === 'all') return;
-    const yearMatch = /^(\d{4})/.exec(key);
-    if (!yearMatch) return;
-    const year = yearMatch[1];
-    const newKeys = new Set<string>(openKeys.value);
-    // 移除所有年份的展开状态（只保留当前年份）
-    const yearRegex = /^\d{4}$/;
-    for (const k of [...newKeys]) {
-      if (yearRegex.test(k)) {
-        newKeys.delete(k);
-      }
-    }
-    newKeys.add(year);
-    openKeys.value = [...newKeys];
+    const m = /^(\d{4})(?:-(\d{2}))?/.exec(key);
+    if (!m) return;
+    const next = new Set<string>([m[1]]);
+    if (m[2]) next.add(`${m[1]}-${m[2]}`);
+    openKeys.value = [...next];
   },
   { immediate: false }
 );
+
+/** 选中 key 是否位于某节点路径内（用于父级高亮） */
+function isPathOf(key: string): boolean {
+  return props.selectedKey === key || props.selectedKey.startsWith(key + '-');
+}
 
 function onSelect(key: string) {
   emit('select', key);
@@ -112,7 +109,7 @@ function onSelect(key: string) {
   >
     <a-menu-item key="all">
       <template #icon><IconApps :size="16" /></template>
-      全部
+      <span class="node-label">全部</span>
     </a-menu-item>
 
     <!-- 按时间（年 -> 月 -> 日）为顶级导航，默认即是时间维度 -->
@@ -121,17 +118,21 @@ function onSelect(key: string) {
       :key="y.year"
     >
       <template #icon><IconCalendar :size="16" /></template>
-      <template #title>{{ y.year }} 年</template>
+      <template #title>
+        <span class="node-label" :class="{ 'sub-selected': isPathOf(y.year) }">{{ y.year }} 年</span>
+      </template>
       <a-sub-menu
         v-for="mo in y.months"
         :key="mo.key"
       >
-        <template #title>{{ Number(mo.month) }} 月</template>
+        <template #title>
+          <span class="node-label" :class="{ 'sub-selected': isPathOf(mo.key) }">{{ Number(mo.month) }} 月</span>
+        </template>
         <a-menu-item
           v-for="d in mo.days"
           :key="d.key"
         >
-          {{ Number(d.day) }} 日
+          <span class="node-label">{{ Number(d.day) }} 日</span>
         </a-menu-item>
       </a-sub-menu>
     </a-sub-menu>
@@ -173,5 +174,18 @@ function onSelect(key: string) {
 }
 .sidebar-menu :deep(.arco-menu-open .arco-menu-icon-suffix .arco-icon-caret-right) {
   transform: rotate(90deg);
+}
+
+/* 节点文本 */
+.node-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 选中路径上的父级高亮 */
+.sub-selected {
+  font-weight: 600;
+  color: rgb(var(--primary-6));
 }
 </style>

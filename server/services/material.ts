@@ -216,9 +216,18 @@ export async function getMaterialFile(
 export async function getFileByKey(
   env: Env,
   key: string,
-): Promise<{ body: ArrayBuffer; contentType: string } | null> {
+): Promise<{ body: ArrayBuffer; contentType: string; name?: string } | null> {
   const obj = await getFromR2(env.R2, key);
   if (!obj) return null;
+
+  // R2 key 不含原始文件名（为 <id>.<ext>），从 KV 元数据反查，用于设置标签页/下载标题
+  let name: string | undefined;
+  try {
+    const { items } = await getAllMaterials(env.KV);
+    name = items.find((i) => i.R2Key === key)?.name;
+  } catch {
+    name = undefined;
+  }
 
   const ext = key.includes('.') ? key.slice(key.lastIndexOf('.') + 1).toLowerCase() : '';
 
@@ -237,5 +246,5 @@ export async function getFileByKey(
   }
 
   const body = await obj.arrayBuffer();
-  return { body, contentType };
+  return { body, contentType, name };
 }

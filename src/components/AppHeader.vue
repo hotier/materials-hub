@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { IconSync, IconRefresh, IconExport } from '@arco-design/web-vue/es/icon';
+import { IconSync, IconRefresh, IconExport, IconMenu } from '@arco-design/web-vue/es/icon';
 import { useApi } from '@/composables/useApi';
 
 const props = defineProps<{
@@ -14,6 +14,7 @@ const emit = defineEmits<{
   'update:searchQuery': [value: string];
   'sync': [];
   'refresh': [];
+  'toggle-sider': [];
 }>();
 
 const router = useRouter();
@@ -62,6 +63,10 @@ async function confirmLogout() {
 <template>
   <!-- 左侧品牌与导航 -->
   <div class="header-left">
+    <!-- 移动端：侧栏开关（仅 <768px 显示） -->
+    <a-button class="sider-toggle" shape="circle" size="medium" @click="emit('toggle-sider')">
+      <template #icon><IconMenu /></template>
+    </a-button>
     <div class="header-brand">
       <i-mdi-folder-multiple-image class="brand-logo" :width="30" :height="30" />
       <span class="brand-name">素材中心</span>
@@ -98,10 +103,21 @@ async function confirmLogout() {
 
     <a-divider direction="vertical" />
 
-    <a-button @click="handleLogout">
+    <!-- 桌面端：文字退出按钮 -->
+    <a-button class="logout-btn-desktop" @click="handleLogout">
       <template #icon><icon-export /></template>
       退出
     </a-button>
+
+    <!-- 移动端：退出收进 Dropdown（仅 <768px 显示） -->
+    <a-dropdown class="logout-btn-mobile" trigger="click" position="br">
+      <a-button shape="circle" size="medium">
+        <template #icon><IconExport /></template>
+      </a-button>
+      <template #content>
+        <a-doption @click="handleLogout">退出登录</a-doption>
+      </template>
+    </a-dropdown>
   </div>
 
   <!-- 退出确认弹窗 -->
@@ -168,5 +184,32 @@ async function confirmLogout() {
   display: flex;
   justify-content: flex-end;
   gap: var(--gap-sm);
+}
+
+/* ======== 移动端适配（仅影响 <768px，桌面端不受影响） ======== */
+.sider-toggle {
+  display: none;
+  margin-right: var(--gap-sm);
+}
+.logout-btn-mobile {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .sider-toggle {
+    display: inline-flex;
+  }
+  .brand-name {
+    display: none;
+  }
+  .header-center {
+    padding: 0 var(--gap-sm);
+  }
+  .logout-btn-desktop {
+    display: none;
+  }
+  .logout-btn-mobile {
+    display: inline-flex;
+  }
 }
 </style>

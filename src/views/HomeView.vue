@@ -32,6 +32,8 @@ const activeDateKey = ref(getTodayKey());
 const activeFolderKey = ref('');
 const searchQuery = ref('');
 const isSyncing = ref(false);
+// 移动端侧栏抽屉
+const mobileSiderOpen = ref(false);
 
 // 弹窗
 const editTarget = ref<Material | null>(null);
@@ -204,6 +206,12 @@ function handleSidebarSelect(key: string) {
   searchQuery.value = '';
 }
 
+/** 移动端抽屉内选中时间维度：更新筛选并关闭抽屉 */
+function handleMobileSidebarSelect(key: string) {
+  handleSidebarSelect(key);
+  mobileSiderOpen.value = false;
+}
+
 /** 文件夹下钻：进入某文件夹路径（由列表区点击触发） */
 function handleDrill(path: string) {
   // 从「全部」点击文件夹时，自动定位到该文件夹内最新文件的日期
@@ -364,6 +372,7 @@ onUnmounted(() => { window.removeEventListener('resize', initFabPos); });
         :loading="loading"
         @sync="handleSync"
         @refresh="loadList"
+        @toggle-sider="mobileSiderOpen = true"
       />
     </a-layout-header>
 
@@ -402,6 +411,22 @@ onUnmounted(() => { window.removeEventListener('resize', initFabPos); });
         </div>
       </a-layout-content>
     </a-layout>
+
+    <!-- 移动端：侧栏抽屉（仅 <768px 使用，桌面端侧栏保持原样） -->
+    <a-drawer
+      v-model:visible="mobileSiderOpen"
+      placement="left"
+      :width="260"
+      :footer="false"
+      :header="false"
+      class="home-sider-drawer"
+    >
+      <Sidebar
+        :items="items"
+        :selected-key="activeDateKey"
+        @select="handleMobileSidebarSelect"
+      />
+    </a-drawer>
 
     <!-- 悬浮上传按钮 -->
     <button
@@ -453,6 +478,9 @@ onUnmounted(() => { window.removeEventListener('resize', initFabPos); });
 .home-sider {
   background: var(--color-bg-surface);
   border-right: 1px solid var(--color-border-light);
+  /* 时间树层级多时纵向滚动，避免挤出视口 */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .home-content {
@@ -470,8 +498,9 @@ onUnmounted(() => { window.removeEventListener('resize', initFabPos); });
 }
 
 @media (max-width: 768px) {
-  .home-body {
-    flex-direction: column;
+  /* 移动端：桌面侧栏隐藏，改为抽屉承载 */
+  .home-sider {
+    display: none;
   }
 }
 
@@ -508,5 +537,16 @@ onUnmounted(() => { window.removeEventListener('resize', initFabPos); });
   cursor: grabbing;
   transform: scale(1.1);
   box-shadow: 0 8px 36px rgba(0, 113, 227, 0.5);
+}
+</style>
+
+<style>
+/* 移动端侧栏抽屉（Drawer teleport 到 body，需非 scoped） */
+.home-sider-drawer .arco-drawer-content {
+  background: var(--color-bg-surface);
+}
+.home-sider-drawer .arco-drawer-body {
+  padding: var(--gap-md) 0;
+  overflow-y: auto;
 }
 </style>

@@ -20,11 +20,12 @@ downloadRoute.get('/', async (c) => {
   if (!obj) return jsonError(c, 404, '文件不存在');
 
   const filename = `${item.name}${item.ext ? '.' + item.ext : ''}`;
+  const ext = item.ext ? '.' + item.ext : '';
 
   return new Response(obj.body, {
     headers: {
       'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
-      'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
+      'Content-Disposition': `attachment; filename="download${ext}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       'Cache-Control': 'private, no-store',
     },
   });

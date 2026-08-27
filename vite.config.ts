@@ -61,6 +61,15 @@ export default defineConfig({
           if (id.includes('node_modules/@arco-design')) {
             return 'vendor-arco';
           }
+          // office 预览解析库（docx/pptx/xlsx + 共享依赖 jszip）仅在打开对应类型时按需加载，不走 vendor
+          if (
+            id.includes('node_modules/docx-preview') ||
+            id.includes('node_modules/pptx-preview') ||
+            id.includes('node_modules/xlsx') ||
+            id.includes('node_modules/jszip')
+          ) {
+            return undefined;
+          }
           // vue 和其他第三方包不拆分，避免循环引用导致运行时 TDZ 错误
           if (id.includes('node_modules')) {
             return 'vendor';

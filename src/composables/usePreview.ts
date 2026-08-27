@@ -26,10 +26,10 @@ const EXT_MAP: Record<string, PreviewCategory> = {
   sql: 'code', sh: 'code', bash: 'code', zsh: 'code', ps1: 'code',
   dockerfile: 'code', makefile: 'code',
   ini: 'code', cfg: 'code', conf: 'code', env: 'code',
-  // Media
+  // Media（仅浏览器原生可解析的容器；avi/mkv/mov/wmv/flv 走下载提示页）
   png: 'image', jpg: 'image', jpeg: 'image', gif: 'image',
   webp: 'image', svg: 'image', bmp: 'image', ico: 'image', avif: 'image',
-  mp4: 'video', webm: 'video', mov: 'video', avi: 'video', mkv: 'video',
+  mp4: 'video', webm: 'video',
   mp3: 'audio', wav: 'audio', ogg: 'audio', flac: 'audio', aac: 'audio', m4a: 'audio',
   // Web
   html: 'html', htm: 'html',
