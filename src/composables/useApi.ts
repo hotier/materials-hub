@@ -160,8 +160,11 @@ export function useApi() {
     return `${BASE}/raw?key=${encodeURIComponent(r2Key)}${view ? '&view=1' : ''}`;
   }
 
-  function getPreviewPageUrl(id: string): string {
-    return `/preview?id=${encodeURIComponent(id)}`;
+  function getPreviewPageUrl(id: string, extra?: { name?: string; ext?: string }): string {
+    let url = `/preview?id=${encodeURIComponent(id)}`;
+    if (extra?.name) url += `&name=${encodeURIComponent(extra.name)}`;
+    if (extra?.ext) url += `&ext=${encodeURIComponent(extra.ext)}`;
+    return url;
   }
 
   return {

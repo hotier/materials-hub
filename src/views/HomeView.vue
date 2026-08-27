@@ -247,7 +247,8 @@ function handleNavigateDate(key: string) {
 function handleSelectItem(item: Material) {
   // 先清理 popup，防止 tooltip 残留到预览页
   clearAllArcoPopups();
-  nextTick(() => router.push({ path: '/preview', query: { id: item.id } }));
+  // 携带 name/ext：预览页加载元数据前即可立即显示标题与文件类型标签
+  nextTick(() => router.push({ path: '/preview', query: { id: item.id, name: item.name, ext: item.ext } }));
 }
 
 function handleEdit(item: Material) {

@@ -33,6 +33,16 @@ const errorMsg = ref('');
 
 const APP_TITLE = 'Materials Hub';
 
+/**
+ * 路由 query 预置的展示信息：从列表进入/新窗口打开时直接携带 name 与 ext，
+ * 标题与文件类型标签无需等待元数据接口即可立即显示；接口返回后再以完整数据为准覆盖。
+ */
+const queryName = computed(() => (route.query.name as string) || '');
+const queryExt = computed(() => (route.query.ext as string) || '');
+
+const displayName = computed(() => item.value?.name || queryName.value || '加载中...');
+const displayExt = computed(() => item.value?.ext || queryExt.value || '');
+
 /** 去掉文件名后缀（仅保留最后一段扩展名） */
 function stripExt(name: string): string {
   const i = name.lastIndexOf('.');
@@ -76,6 +86,11 @@ onMounted(async () => {
   setTimeout(clearAllArcoPopups, 50);
   setTimeout(clearAllArcoPopups, 200);
   setTimeout(clearAllArcoPopups, 500);
+
+  // 从列表进入/新窗口打开时 query 已携带文件名，立即设置标题（元数据返回后覆盖为一致值）
+  if (queryName.value) {
+    document.title = stripExt(queryName.value);
+  }
 
   const id = route.query.id as string;
   if (!id) {
@@ -159,12 +174,12 @@ function download() {
           <template #icon><IconArrowLeft /></template>
         </a-button>
         <div class="header-info">
-          <h1 class="header-title">{{ item?.name || '加载中...' }}</h1>
-          <a-tag v-if="item?.ext" size="small" :color="getExtColor(item.ext)">
+          <h1 class="header-title">{{ displayName }}</h1>
+          <a-tag v-if="displayExt" size="small" :color="getExtColor(displayExt)">
             <template #icon>
-              <component :is="getExtIcon(item.ext)" :width="14" :height="14" />
+              <component :is="getExtIcon(displayExt)" :width="14" :height="14" />
             </template>
-            {{ item.ext.toUpperCase() }}
+            {{ displayExt.toUpperCase() }}
           </a-tag>
         </div>
         <div v-if="showModeToggle" class="view-mode">
