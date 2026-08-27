@@ -521,14 +521,59 @@ function handleFilterChange(field: string, values: string[]) {
       >
     </a-breadcrumb>
 
-    <!-- 覆盖层：初始加载时全屏 loading -->
+    <!-- 骨架屏：初始加载时按表格列结构占位（替代覆盖层转圈） -->
     <div
       v-if="loading && !unifiedList.length"
-      class="list-overlay"
+      class="list-skeleton"
+      aria-busy="true"
     >
-      <div class="list-loading">
-        <a-spin tip="加载中..." />
+      <!-- 表头占位行（无动画） -->
+      <div class="skeleton-head" aria-hidden="true">
+        <span class="sk-head-cell sk-h-check" />
+        <span class="sk-head-cell sk-h-name" />
+        <span class="sk-head-cell sk-h-desc" />
+        <span class="sk-head-cell sk-h-tags" />
+        <span class="sk-head-cell sk-h-ext" />
+        <span class="sk-head-cell sk-h-date" />
+        <span class="sk-head-cell sk-h-size" />
+        <span class="sk-head-cell sk-h-actions" />
       </div>
+      <a-skeleton animation>
+        <div v-for="n in 8" :key="n" class="skeleton-row">
+          <span class="sk-col sk-col-check">
+            <a-skeleton-shape class="sk-checkbox" />
+          </span>
+          <span class="sk-col sk-col-name">
+            <a-skeleton-shape class="sk-file-icon" />
+            <span class="sk-name-lines">
+              <a-skeleton-line :rows="1" :widths="['60%']" :line-height="12" />
+              <a-skeleton-line :rows="1" :widths="['40%']" :line-height="12" />
+            </span>
+          </span>
+          <span class="sk-col sk-col-desc">
+            <a-skeleton-line :rows="1" :widths="[120]" :line-height="12" />
+          </span>
+          <span class="sk-col sk-col-tags">
+            <span class="sk-tag-group">
+              <a-skeleton-line :rows="1" :widths="[44]" :line-height="16" />
+              <a-skeleton-line :rows="1" :widths="[60]" :line-height="16" />
+            </span>
+          </span>
+          <span class="sk-col sk-col-ext">
+            <a-skeleton-line :rows="1" :widths="[40]" :line-height="16" />
+          </span>
+          <span class="sk-col sk-col-date">
+            <a-skeleton-line :rows="1" :widths="[70]" :line-height="12" />
+          </span>
+          <span class="sk-col sk-col-size">
+            <a-skeleton-line :rows="1" :widths="[40]" :line-height="12" />
+          </span>
+          <span class="sk-col sk-col-actions">
+            <a-skeleton-shape class="sk-action-dot" />
+            <a-skeleton-shape class="sk-action-dot" />
+          </span>
+        </div>
+      </a-skeleton>
     </div>
 
     <!-- 文件夹与文件统一表格：始终渲染，避免 insertBefore 报错（Arco 内部 teleport/锚点依赖稳定节点） -->
@@ -926,23 +971,158 @@ function handleFilterChange(field: string, values: string[]) {
   align-items: center;
 }
 
-.list-overlay {
+/* ========== 骨架屏：初始加载时按表格列结构占位 ========== */
+.list-skeleton {
   position: absolute;
   inset: 36px 0 0 0; /* 避开面包屑高度 */
-  /* 必须高于 Arco 固定列(z-index:10)的表头/单元格，否则多选列、操作列会穿透加载覆盖层常驻显示 */
+  /* 必须高于 Arco 固定列(z-index:10)的表头/单元格，否则多选列、操作列会穿透加载层常驻显示 */
   z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-bg-2, #f7f8fa);
+  /* 背景保持与页面一致（透明），避免右侧出现整块色差空白 */
+  overflow: hidden;
 }
 
-.list-overlay .list-loading {
+/* 表头占位行（无动画）：总宽与表格 scroll.x 一致，左对齐与表格重叠 */
+.skeleton-head {
   display: flex;
   align-items: center;
+  width: 1100px;
+  height: 40px;
+  border-bottom: 1px solid var(--color-border-2);
+}
+.skeleton-head .sk-head-cell {
+  flex: 1 0 auto; /* 余量均分，使列边界与 Arco 单元格（含 padding）对齐 */
+  box-sizing: border-box;
+  padding: 0 8px;
+}
+.skeleton-head .sk-head-cell::after {
+  content: '';
+  display: block;
+  width: 60%;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--color-fill-3, #e5e6eb);
+}
+.sk-h-check { flex: 0 0 24px; width: 24px; padding: 0; }
+.sk-h-name { width: 200px; }
+.sk-h-desc { width: 220px; }
+.sk-h-tags { width: 240px; }
+.sk-h-ext { width: 80px; }
+.sk-h-date { width: 130px; }
+.sk-h-size { width: 90px; }
+.sk-h-actions { width: 100px; }
+
+/* 骨架行：模拟表格行，总宽与表格一致，列宽与真实表格对齐 */
+.list-skeleton :deep(.skeleton-row) {
+  display: flex;
+  align-items: center;
+  width: 1100px;
+  height: 42px;
+  border-bottom: 1px solid var(--color-border-2);
+}
+.list-skeleton :deep(.sk-col) {
+  display: flex;
+  align-items: center;
+  flex: 1 0 auto; /* 余量均分，列边界与 Arco 实际单元格对齐 */
+  box-sizing: border-box;
+  padding: 0 8px;
+  overflow: hidden;
+}
+.list-skeleton :deep(.sk-col-check) {
+  flex: 0 0 24px;
+  width: 24px;
+  padding: 0;
   justify-content: center;
-  width: 100%;
-  height: 100%;
+}
+.list-skeleton :deep(.sk-col-name) {
+  width: 200px;
+  gap: 8px;
+}
+.list-skeleton :deep(.sk-col-desc) {
+  width: 220px;
+}
+.list-skeleton :deep(.sk-col-tags) {
+  width: 240px;
+}
+.list-skeleton :deep(.sk-col-ext) {
+  width: 80px;
+}
+.list-skeleton :deep(.sk-col-date) {
+  width: 130px;
+}
+.list-skeleton :deep(.sk-col-size) {
+  width: 90px;
+}
+.list-skeleton :deep(.sk-col-actions) {
+  width: 100px;
+  gap: 4px;
+}
+
+/* 复选框占位 */
+.list-skeleton :deep(.sk-checkbox) {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+/* 文件图标占位 */
+.list-skeleton :deep(.sk-file-icon) {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+/* 名称列两行文本 */
+.list-skeleton :deep(.sk-name-lines) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+/* 标签列两段 */
+.list-skeleton :deep(.sk-tag-group) {
+  display: flex;
+  gap: 6px;
+}
+/* 操作按钮占位 */
+.list-skeleton :deep(.sk-action-dot) {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+/* 骨架线统一压缩间距 */
+.list-skeleton :deep(.arco-skeleton-line) {
+  display: block;
+  line-height: 0;
+  margin: 0;
+}
+.list-skeleton :deep(.arco-skeleton-line-row) {
+  margin-bottom: 0;
+  border-radius: 2px;
+}
+
+/* 移动端：隐藏描述、标签列，压缩列宽（与表格列渲染一致） */
+@media (max-width: 768px) {
+  .skeleton-head,
+  .list-skeleton :deep(.skeleton-row) {
+    width: 600px; /* 对齐移动端表格 scroll.x */
+  }
+  .skeleton-head .sk-h-desc,
+  .skeleton-head .sk-h-tags,
+  .list-skeleton :deep(.sk-col-desc),
+  .list-skeleton :deep(.sk-col-tags) {
+    display: none;
+  }
+  .skeleton-head .sk-h-name,
+  .list-skeleton :deep(.sk-col-name) { width: 170px; }
+  .skeleton-head .sk-h-ext,
+  .list-skeleton :deep(.sk-col-ext) { width: 80px; }
+  .skeleton-head .sk-h-date,
+  .list-skeleton :deep(.sk-col-date) { width: 122px; }
+  .skeleton-head .sk-h-size,
+  .list-skeleton :deep(.sk-col-size) { width: 82px; }
+  .skeleton-head .sk-h-actions,
+  .list-skeleton :deep(.sk-col-actions) { width: 92px; }
 }
 
 /* ======== 移动端适配（仅影响 <768px，桌面端不受影响） ======== */

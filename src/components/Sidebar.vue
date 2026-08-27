@@ -10,6 +10,8 @@ import type { Material } from '@/types';
 const props = defineProps<{
   items: Material[];
   selectedKey: string;
+  /** 列表加载中：用于显示时间分组骨架 */
+  loading?: boolean;
 }>();
 
 const emit = defineEmits<{ (e: 'select', key: string): void }>();
@@ -137,6 +139,19 @@ function onSelect(key: string) {
       </a-sub-menu>
     </a-sub-menu>
   </a-menu>
+
+  <!-- 加载中：时间分组骨架（与列表区加载态统一，避免空白） -->
+  <a-skeleton
+    v-if="loading"
+    animation
+    class="sidebar-skeleton"
+  >
+    <div v-for="n in 6" :key="n" class="sk-menu-row">
+      <a-skeleton-shape class="sk-menu-icon" />
+      <a-skeleton-line :rows="1" :widths="['70%']" :line-height="12" class="sk-menu-text" />
+      <a-skeleton-shape class="sk-menu-caret" />
+    </div>
+  </a-skeleton>
 </template>
 
 <style scoped>
@@ -187,5 +202,41 @@ function onSelect(key: string) {
 .sub-selected {
   font-weight: 600;
   color: rgb(var(--primary-6));
+}
+
+/* 加载中：时间分组骨架（与列表区加载态统一） */
+.sidebar-skeleton {
+  padding: 8px 0 4px;
+}
+.sidebar-skeleton :deep(.sk-menu-row) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+}
+.sidebar-skeleton :deep(.sk-menu-icon) {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+.sidebar-skeleton :deep(.sk-menu-text) {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-skeleton :deep(.sk-menu-caret) {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+.sidebar-skeleton :deep(.arco-skeleton-line) {
+  display: block;
+  line-height: 0;
+}
+.sidebar-skeleton :deep(.arco-skeleton-line-row) {
+  margin-bottom: 0;
+  border-radius: 2px;
 }
 </style>

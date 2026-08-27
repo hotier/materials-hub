@@ -388,6 +388,7 @@ onUnmounted(() => { window.removeEventListener('resize', initFabPos); });
         <Sidebar
           :items="items"
           :selected-key="activeDateKey"
+          :loading="loading"
           @select="handleSidebarSelect"
         />
       </a-layout-sider>
