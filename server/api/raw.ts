@@ -18,7 +18,13 @@ function escapeHtml(s: string): string {
 /** 浏览器原生可播放的视频 MIME（mp4/webm/ogg；avi/mkv/mov 等无法原生播放） */
 const PLAYABLE_VIDEO = new Set(['video/mp4', 'video/webm', 'video/ogg']);
 
-/** 是否属于文本/代码类（可嵌入 HTML 展示） */
+/**
+ * 是否属于文本/代码类（可嵌入 HTML 展示）。
+ * 仅依据对象自身的 Content-Type 判定：能展示的类型（image/video/audio/text/html/pdf）
+ * 由本路由直接展示，其余类型一律返回"暂不支持在线预览 + 下载按钮"提示页（拦截）。
+ * 不在此处按扩展名维护"可预览性"清单——对象 Content-Type 缺失时由
+ * getFileByKey 按 MIME 映射惰性修复写回，判断依据始终是对象自身的类型。
+ */
 function isTextual(contentType: string): boolean {
   if (contentType.startsWith('text/')) {
     // 排除 text/html：HTML 文件应原样渲染（前端预览用 iframe 加载 raw）

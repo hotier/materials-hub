@@ -454,13 +454,14 @@ async function handleCopyLink(record: Material) {
 
 function handleOpenNewWindow(record: Material) {
   const cat = usePreview().getCategory(record);
-  // Office / 未知类型：浏览器无法原生渲染（raw 只会返回"暂不支持"提示页），
-  // 新窗口打开前端预览页，由 Docx/Pptx 等组件渲染
-  if (cat === 'docx' || cat === 'excel' || cat === 'pptx' || cat === 'unknown') {
+  // 仅"前端 JS 解析"的 Office 文档走预览页（Docx/Excel/Pptx 组件解析渲染，raw 无法直接展示二进制）
+  if (cat === 'docx' || cat === 'excel' || cat === 'pptx') {
     window.open(useApi().getPreviewPageUrl(record.id), '_blank');
     return;
   }
-  // 图片/视频/音频/PDF/文本/代码等：浏览器可原生解析，直接打开原文件
+  // 其余一律走 raw：浏览器可原生展示的（图片/视频/音频/PDF/文本/代码/HTML）由 raw 直接展示；
+  // 浏览器无法解析的类型由 raw 拦截返回"暂不支持在线预览 + 下载按钮"提示页。
+  // 是否可预览由 raw 的拦截动作统一判定，前端不再按扩展名硬编码预判。
   window.open(useApi().rawUrl(record.R2Key, true), '_blank');
 }
 

@@ -182,6 +182,39 @@ export async function deleteMaterial(env: Env, id: string): Promise<void> {
 
 // ===== File Access =====
 
+/**
+ * 读取 R2 对象并保证 Content-Type 具体。
+ * 存量对象可能因历史 MIME 映射缺失而存为 application/octet-stream，
+ * 导致 raw 无法按类型展示（会落入"暂不支持"拦截页）。这里按扩展名映射
+ * 惰性修复并写回 R2（幂等：修复一次后存储即具体类型），从而让"能否预览"
+ * 的判断始终以对象自身的 Content-Type 为准，而不是在展示层硬编码扩展名清单。
+ */
+async function readWithFixedContentType(
+  env: Env,
+  obj: R2ObjectBody,
+  key: string,
+  ext: string,
+): Promise<{ body: ArrayBuffer; contentType: string }> {
+  const stored = obj.httpMetadata?.contentType || '';
+  const hasSpecificType = !!stored && !stored.startsWith('application/octet-stream');
+  const contentType = hasSpecificType
+    ? stored
+    : getMime(ext) || 'application/octet-stream';
+
+  const body = await obj.arrayBuffer();
+
+  if (!hasSpecificType && contentType !== stored) {
+    try {
+      // uploadToR2 仅写入 httpMetadata.contentType，覆盖不会丢失其他元数据
+      await env.R2.put(key, body, { httpMetadata: { contentType } });
+    } catch (err) {
+      console.error('[material] Content-Type 惰性修复失败:', key, err);
+    }
+  }
+
+  return { body, contentType };
+}
+
 /** 从 R2 读取产出文件内容（用于预览/原始下载） */
 export async function getMaterialFile(
   env: Env,
@@ -193,10 +226,11 @@ export async function getMaterialFile(
   const obj = await getFromR2(env.R2, item.R2Key);
   if (!obj) return null;
 
-  let contentType = obj.httpMetadata?.contentType ||
-    getMime(item.ext as FileExt) ||
-    'application/octet-stream';
+  const { body, contentType: rawCt } = await readWithFixedContentType(
+    env, obj, item.R2Key, item.ext,
+  );
 
+  let contentType = rawCt;
   if (
     !contentType.includes('charset') &&
     (contentType.startsWith('text/') ||
@@ -208,7 +242,6 @@ export async function getMaterialFile(
     contentType += '; charset=utf-8';
   }
 
-  const body = await obj.arrayBuffer();
   return { body, contentType, item };
 }
 
@@ -231,10 +264,9 @@ export async function getFileByKey(
 
   const ext = key.includes('.') ? key.slice(key.lastIndexOf('.') + 1).toLowerCase() : '';
 
-  let contentType = obj.httpMetadata?.contentType ||
-    getMime(ext) ||
-    'application/octet-stream';
+  const { body, contentType: rawCt } = await readWithFixedContentType(env, obj, key, ext);
 
+  let contentType = rawCt;
   if (
     !contentType.includes('charset') &&
     (contentType.startsWith('text/') ||
@@ -245,6 +277,5 @@ export async function getFileByKey(
     contentType += '; charset=utf-8';
   }
 
-  const body = await obj.arrayBuffer();
   return { body, contentType, name };
 }
